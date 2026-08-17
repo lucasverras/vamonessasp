@@ -207,31 +207,37 @@ export async function syncComentarios() {
 /**
  * Ativa os webhooks. ESCRITA de configuração — muda estado na Meta.
  *
- * São DUAS assinaturas em lugares diferentes, e confundi-las custou uma
- * tentativa: `/{page-id}/subscribed_apps` só aceita campos de PÁGINA, e a Meta
- * responde listando os válidos — `comments` não está entre eles.
+ * São DUAS assinaturas, em lugares diferentes e com semânticas diferentes.
+ * Confundi-las custou várias tentativas, então fica documentado:
  *
- *   1. Nível do APP, objeto `instagram`: entrega comments e mentions.
- *      POST /{app-id}/subscriptions com app access token.
- *   2. Nível da PÁGINA: habilita a entrega para esta Página específica.
+ *   1. OBJETO `instagram`, no nível do APP.
+ *      POST /{app-id}/subscriptions com app access token e fields=comments.
+ *      Diz à Meta PARA ONDE mandar e QUAIS eventos de Instagram queremos.
+ *
+ *   2. INSTALAÇÃO DO APP NA PÁGINA.
  *      POST /{page-id}/subscribed_apps com o Page Token.
+ *      Diz à Meta DE QUAL conta entregar. Este endpoint aceita apenas campos de
+ *      PÁGINA — `comments` NÃO é um deles, e a Meta responde listando os
+ *      válidos. Mesmo assim `subscribed_fields` é obrigatório, então usamos
+ *      `name`: instala o app com o mínimo de ruído possível, porque o nome de
+ *      uma Página praticamente nunca muda. Os comentários chegam pela
+ *      assinatura (1), não por este campo.
  *
- * Sem a primeira, a Meta não sabe para onde mandar. Sem a segunda, sabe mas não
- * envia desta conta.
+ * Sem (1) a Meta não sabe para onde mandar. Sem (2) sabe, mas não envia desta
+ * conta — foi exatamente o que aconteceu: assinatura ativa, zero entregas.
  */
 export async function assinarWebhooks() {
   const conta = await getConnectedAccount()
   if (!conta?.facebookPageId) throw new Error('Página do Facebook não vinculada.')
 
-  const { metaPost } = await import('./meta-client')
+  const { metaPost, metaGet } = await import('./meta-client')
   const { env, callbacks } = await import('../env')
 
   const resultados: Record<string, unknown> = {}
-
-  // 1. Objeto `instagram` no nível do app.
   const appToken = `${env.metaAppId}|${env.metaAppSecret}`
+
   try {
-    resultados.appInstagram = await metaPost(`${env.metaAppId}/subscriptions`, appToken, {
+    resultados.objetoInstagram = await metaPost(`${env.metaAppId}/subscriptions`, appToken, {
       object: 'instagram',
       callback_url: callbacks.webhook,
       fields: 'comments',
@@ -239,18 +245,19 @@ export async function assinarWebhooks() {
       include_values: 'true',
     })
   } catch (e) {
-    resultados.appInstagram = { erro: e instanceof Error ? e.message : String(e) }
+    resultados.objetoInstagram = { erro: e instanceof Error ? e.message : String(e) }
   }
 
-  // 2. Entrega para esta Página. `messages` é campo de Página válido e serve à
-  //    fase de respostas recebidas; `comments` deliberadamente NÃO vai aqui.
   try {
     const pageToken = await getPageToken(conta.id)
-    resultados.pagina = await metaPost(`${conta.facebookPageId}/subscribed_apps`, pageToken, {
-      subscribed_fields: 'messages',
-    })
+    resultados.instalacaoNaPagina = await metaPost(
+      `${conta.facebookPageId}/subscribed_apps`,
+      pageToken,
+      { subscribed_fields: 'name' },
+    )
+    resultados.conferencia = await metaGet(`${conta.facebookPageId}/subscribed_apps`, pageToken)
   } catch (e) {
-    resultados.pagina = { erro: e instanceof Error ? e.message : String(e) }
+    resultados.instalacaoNaPagina = { erro: e instanceof Error ? e.message : String(e) }
   }
 
   return resultados
