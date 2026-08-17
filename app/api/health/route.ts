@@ -47,6 +47,12 @@ export async function GET() {
       faltando: missing,
       appUrl,
       oauthRedirectUri: appUrl ? `${appUrl.replace(/\/$/, '')}/api/auth/instagram/callback` : null,
+      // Escopos não são segredo, e expô-los permite confirmar de fora que o
+      // ambiente em execução tem a configuração certa — a variável vive na
+      // Vercel, não no repositório, então o código pode estar correto e o
+      // deploy rodando com um valor antigo.
+      escopos: (process.env.META_SCOPES ?? '').split(',').filter(Boolean),
+      escoposParecemDoFluxoErrado: (process.env.META_SCOPES ?? '').includes('instagram_business_'),
       dica:
         missing.length > 0
           ? 'Adicione as variáveis na Vercel (Settings → Environment Variables) e REDEPLOY: ' +
