@@ -62,7 +62,18 @@ export interface Veredito {
  * até MONTAR a fila — o oposto do que a interface promete, que é preparar tudo e
  * liberar depois.
  */
-export async function revalidar(commentId: string): Promise<Veredito> {
+export async function revalidar(
+  commentId: string,
+  /**
+   * Ação a ignorar na checagem de "já na fila".
+   *
+   * O worker reserva o item marcando SENDING e só então revalida — sem esta
+   * exclusão ele encontra A PRÓPRIA AÇÃO e conclui que o comentário já está na
+   * fila, ignorando todo envio. Auto-colisão silenciosa: nenhum erro, nenhuma
+   * mensagem, e o motivo registrado parecia legítimo.
+   */
+  ignorarAcaoId?: string,
+): Promise<Veredito> {
   const { data: cfg } = await db()
     .from('automation_settings')
     .select('cooldown_days_per_user')
@@ -98,12 +109,14 @@ export async function revalidar(commentId: string): Promise<Veredito> {
   // Já existe ação PENDENTE para este comentário. Sem esta checagem, duas
   // campanhas podem enfileirar a mesma pessoa: a constraint impediria o segundo
   // SENT, mas só na hora do envio, virando erro em vez de decisão consciente.
-  const { count: jaNaFila } = await db()
+  let filaQuery = db()
     .from('comment_actions')
     .select('id', { count: 'exact', head: true })
     .eq('comment_id', c.id)
     .eq('action_type', 'PRIVATE_REPLY')
     .in('status', ['QUEUED', 'SENDING', 'PENDING_APPROVAL', 'APPROVED'])
+  if (ignorarAcaoId) filaQuery = filaQuery.neq('id', ignorarAcaoId)
+  const { count: jaNaFila } = await filaQuery
   if ((jaNaFila ?? 0) > 0) return { pode: false, motivo: 'JA_NA_FILA' }
 
   const { data: pessoa } = await db()

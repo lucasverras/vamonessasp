@@ -83,7 +83,8 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
     // 4. Revalidação no instante do envio. Entre a seleção e agora, o
     //    comentário pode ter expirado, sido apagado, já ter recebido resposta,
     //    ou a pessoa pode ter entrado na blacklist.
-    const veredito = await revalidar(item.comment_id)
+    // Passa o próprio id: sem isso o worker se vê na fila e ignora tudo.
+    const veredito = await revalidar(item.comment_id, item.id)
     if (!veredito.pode) {
       r.ignorados += 1
       await db()
@@ -152,14 +153,25 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
         })
         .eq('id', item.id)
 
-      await db()
+      // eligibility_status é o único campo desnormalizado no comentário — o
+      // detalhe do envio (message_id, sent_at) vive em comment_actions, para não
+      // haver duas verdades que possam divergir.
+      const { error: erroComentario } = await db()
         .from('instagram_comments')
-        .update({
-          eligibility_status: 'SENT',
-          private_reply_sent_at: agora,
-          private_reply_message_id: resposta.message_id,
-        })
+        .update({ eligibility_status: 'SENT' })
         .eq('id', item.comment_id)
+
+      // NUNCA em silêncio: a mensagem JÁ SAIU. Se o estado não acompanhar, a
+      // tela mostra a pessoa como disponível e alguém tenta de novo. Foi
+      // exatamente isso que aconteceu no primeiro envio real, porque este
+      // update escrevia colunas que não existiam e o erro era descartado.
+      if (erroComentario) {
+        console.error('[worker] ENVIADO mas falhou ao atualizar o comentário', {
+          actionId: item.id,
+          commentId: item.comment_id,
+          erro: erroComentario.message,
+        })
+      }
 
       if (comentario?.instagram_user_id) {
         await db().rpc('recalcular_contadores_pessoas', {
@@ -197,7 +209,7 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
           .from('instagram_comments')
           .update({
             eligibility_status: 'FAILED',
-            failure_reason: meta ? describeFailure(meta) : 'erro permanente',
+            not_eligible_reason: meta ? describeFailure(meta) : 'erro permanente',
           })
           .eq('id', item.comment_id)
       }
