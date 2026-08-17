@@ -68,7 +68,10 @@ const JOBS = {
    * tem caminho para enviar — o worker recusa qualquer ação que não esteja
    * QUEUED, e estas nascem SHADOW.
    */
-  'analisar-comentarios': () => analisarPendentes(20),
+  // 60 com concorrência 6 ≈ 10 ondas de 3,6s ≈ 36s, dentro do limite de duração
+  // da função com margem. Era 20 em série (~72s), escolhido quando o prompt ainda
+  // não estava validado e o gotejamento lento protegia o bolso.
+  'analisar-comentarios': () => analisarPendentes(60),
 } as const
 
 type JobName = keyof typeof JOBS

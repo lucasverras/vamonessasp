@@ -16,6 +16,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 const PUBLIC_PATHS = ['/privacy', '/terms', '/data-deletion', '/entrar', '/api/health']
 const PUBLIC_PREFIXES = ['/api/webhooks/', '/api/cron/', '/_next/', '/favicon']
+const VERIFICACAO_DE_DOMINIO = /^\/[A-Za-z0-9_-]+\.txt$/
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -23,6 +24,12 @@ export function middleware(request: NextRequest) {
   if (pathname === '/') return NextResponse.next()
   if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next()
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next()
+
+  // Arquivos de verificação de domínio (TikTok, Google, Meta) vivem na raiz e são
+  // lidos por um robô sem cookie: atrás do portão, eles voltavam 401 e a
+  // verificação falhava sem dizer por quê. Só `.txt` na raiz, nada aninhado —
+  // é um artefato estático de confirmação, não dado nosso.
+  if (VERIFICACAO_DE_DOMINIO.test(pathname)) return NextResponse.next()
 
   // O callback do OAuth chega pela Meta, sem nosso cookie: é protegido pelo
   // `state` assinado, verificado na própria rota.

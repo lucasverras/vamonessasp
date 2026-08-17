@@ -145,6 +145,18 @@ interface ComentarioParaAnalise {
  * este é o ponto para introduzir a Batch API (50% mais barata) no acervo antigo.
  */
 export async function analisarPendentes(limite = 20) {
+  // Falta de chave é erro de CONFIGURAÇÃO, não falha de análise. Checado aqui,
+  // antes de tocar em qualquer comentário: sem isso o cron rodava sem a chave na
+  // Vercel, cada comentário entrava no catch e virava FAILED — e como o worker só
+  // pega PENDING, 153 comentários ficaram presos para sempre por uma variável de
+  // ambiente. Abortar alto e não mexer em nada é o comportamento correto.
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error(
+      'OPENAI_API_KEY ausente no ambiente. Nenhum comentário foi tocado — ' +
+        'configure a variável e refaça o deploy (a Vercel só aplica env vars em deploys novos).',
+    )
+  }
+
   const promptId = await garantirPromptRegistrado()
 
   const { data: comentarios, error } = await db()
@@ -162,8 +174,29 @@ export async function analisarPendentes(limite = 20) {
   if (error) throw new Error(`Falha ao ler comentários: ${error.message}`)
 
   const resultado = { analisados: 0, falhas: 0, custoEstimadoUSD: 0 }
+  const fila = (comentarios ?? []) as unknown as ComentarioParaAnalise[]
 
-  for (const c of (comentarios ?? []) as unknown as ComentarioParaAnalise[]) {
+  /**
+   * Cada análise é independente das outras, então esperar 3,6s por comentário
+   * antes de começar o próximo era desperdício puro: um lote de 20 levava ~72s.
+   * Com CONCORRENCIA=6 o mesmo lote leva ~13s.
+   *
+   * O teto é deliberado e não é enfeite: sem limite, um lote grande abriria
+   * dezenas de requisições simultâneas e o que ganhamos em tempo perderíamos em
+   * rate limit da OpenAI — e rate limit aqui vira análise perdida, não fila.
+   */
+  const CONCORRENCIA = 6
+  let cursor = 0
+
+  const trabalhador = async () => {
+    for (;;) {
+      const c = fila[cursor++]
+      if (!c) return
+      await processarUm(c)
+    }
+  }
+
+  async function processarUm(c: ComentarioParaAnalise) {
     await db()
       .from('instagram_comments')
       .update({ analysis_status: 'ANALYZING' })
@@ -223,6 +256,8 @@ export async function analisarPendentes(limite = 20) {
         })
     }
   }
+
+  await Promise.all(Array.from({ length: Math.min(CONCORRENCIA, fila.length) }, trabalhador))
 
   return resultado
 }

@@ -26,6 +26,11 @@ const REQUIRED = [
   'SUPABASE_SERVICE_ROLE_KEY',
   'CRON_SECRET',
   'TOKEN_ENCRYPTION_KEY',
+  // Entrou depois, e a ausência dela não aparecia aqui: o /api/health dizia
+  // "Ambiente completo" enquanto o cron de análise falhava em produção a cada
+  // 5 minutos. Um diagnóstico que não cobre a variável nova é um diagnóstico
+  // que mente com confiança.
+  'OPENAI_API_KEY',
 ] as const
 
 export async function GET() {

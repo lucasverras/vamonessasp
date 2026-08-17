@@ -155,9 +155,13 @@ export default async function Revisao() {
           <Bot className="mx-auto size-5 text-ink-faint" />
           <p className="mt-3 text-[0.9375rem] font-medium">Nenhuma análise ainda</p>
           <p className="mx-auto mt-1.5 max-w-md text-[0.8125rem] leading-relaxed text-ink-faint">
-            {pendentes
-              ? `${pendentes} comentários estão na fila. Falta a OPENAI_API_KEY no ambiente para o job de análise rodar.`
-              : 'Sem comentários pendentes de análise.'}
+            {/* Antes esta frase afirmava que faltava a OPENAI_API_KEY sem nunca
+                checar — acertou por coincidência. Agora ela verifica. */}
+            {!pendentes
+              ? 'Sem comentários pendentes de análise.'
+              : process.env.OPENAI_API_KEY
+                ? `${pendentes} comentários na fila. A chave está configurada; o cron analisa em lotes a cada 5 minutos.`
+                : `${pendentes} comentários na fila. Falta a OPENAI_API_KEY neste ambiente — nenhum comentário foi alterado.`}
           </p>
         </div>
       ) : (
