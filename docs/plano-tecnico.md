@@ -3,7 +3,7 @@
 > Documento de decisão. Nada foi implementado ainda.
 > Data da pesquisa da documentação Meta: 17/08/2026. Graph API atual: **v26.0** (lançada 29/07/2026).
 
-Objetivo único do produto: **aumentar seguidores do @vamonessa**, por dois caminhos:
+Objetivo único do produto: **aumentar seguidores do @vamonessasp**, por dois caminhos:
 
 1. `DADOS → entendimento do crescimento → melhores decisões de publicação`
 2. `INTERAÇÃO → OPORTUNIDADE → PRIVATE REPLY → mais chance de follow`
@@ -323,7 +323,7 @@ app_users                     -- allowlist de acesso ao painel
 
 Decisão: **Instagram API with Instagram Login** (host `graph.instagram.com`), não Facebook Login.
 
-Por quê: uma única conta, sem dependência de Página do Facebook nem Business Manager, menos permissões, OAuth mais simples. Custo: token longo de **60 dias** (renovável) em vez de token de Página perpétuo, e as métricas agregadas `total_views`/`total_likes`/`total_comments` (que incluem Facebook e impulsionamento) só existem no Facebook Login. Para o objetivo — crescimento orgânico do @vamonessa — isso não é perda relevante. O `meta-client.ts` abstrai host + auth, então migrar para Facebook Login depois é contido a um arquivo.
+Por quê: uma única conta, sem dependência de Página do Facebook nem Business Manager, menos permissões, OAuth mais simples. Custo: token longo de **60 dias** (renovável) em vez de token de Página perpétuo, e as métricas agregadas `total_views`/`total_likes`/`total_comments` (que incluem Facebook e impulsionamento) só existem no Facebook Login. Para o objetivo — crescimento orgânico do @vamonessasp — isso não é perda relevante. O `meta-client.ts` abstrai host + auth, então migrar para Facebook Login depois é contido a um arquivo.
 
 | Permissão | Para quê | Observação |
 |---|---|---|
@@ -336,7 +336,7 @@ Não pediremos `instagram_business_content_publish` (fora de escopo — sem publ
 
 **Requisitos operacionais além do OAuth:**
 
-1. Conta `@vamonessa` deve ser **Professional** (Business ou Creator).
+1. Conta `@vamonessasp` deve ser **Professional** (Business ou Creator).
 2. No app do Instagram: **Configurações → Privacidade → Mensagens → Ferramentas conectadas → "Permitir acesso a mensagens" LIGADO**. Sem isso, o endpoint de mensagens falha mesmo com permissão concedida.
 3. **O app precisa estar em modo Live** para a Meta entregar webhooks. Em Development, tudo o mais funciona para contas com papel de tester — por isso a reconciliação por polling existe desde a fase 1, e a fase 3 é testável antes da revisão.
 4. **App Review + Advanced Access** para as permissões de comentários/mensagens (e provavelmente verificação de negócio). Este é o item de maior risco de prazo — deve ser submetido cedo, em paralelo às fases 1–2.
@@ -495,7 +495,7 @@ Fora de escopo, confirmado: IA generativa, previsão, scraping de concorrentes, 
 | 2 | App ID | App Dashboard → Configurações → Básico | `META_APP_ID` |
 | 3 | App Secret | mesma tela → *Mostrar* | `META_APP_SECRET` |
 | 4 | Versão da API a fixar | usaremos `v26.0` | `META_API_VERSION` |
-| 5 | Confirmação de que `@vamonessa` é conta **Professional** e que você tem acesso de admin | app do Instagram | — |
+| 5 | Confirmação de que `@vamonessasp` é conta **Professional** e que você tem acesso de admin | app do Instagram | — |
 | 6 | **"Permitir acesso a mensagens" LIGADO** | Instagram → Configurações → Privacidade → Mensagens → Ferramentas conectadas | — |
 | 7 | Projeto Supabase criado (região São Paulo) — URL do projeto | supabase.com/dashboard → Project Settings → API | `NEXT_PUBLIC_SUPABASE_URL` |
 | 8 | Chave anon | mesma tela | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |

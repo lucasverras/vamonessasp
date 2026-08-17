@@ -2,14 +2,15 @@
  * Dados usados nas páginas legais (/privacy, /terms, /data-deletion).
  *
  * Estes documentos são lidos por revisores da Meta durante o App Review e por
- * qualquer pessoa que comentou nos conteúdos do @vamonessa. Nada aqui deve ser
+ * qualquer pessoa que comentou nos conteúdos do @vamonessasp. Nada aqui deve ser
  * inventado.
  */
 
 export const LEGAL = {
   appName: 'Painel Vamo Nessa',
   brand: 'Vamo Nessa',
-  instagramHandle: '@vamonessa',
+  /** Handle real, confirmado via GET /me em 17/08/2026. */
+  instagramHandle: '@vamonessasp',
 
   /** E-mail que recebe pedidos de privacidade, oposição e exclusão de dados. */
   privacyEmail: 'spvamonessa@gmail.com',

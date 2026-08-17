@@ -15,7 +15,7 @@ import {
 export const metadata: Metadata = {
   title: 'Termos de Uso',
   description:
-    'Condições de uso do Painel Vamo Nessa, ferramenta interna de análise e relacionamento do Instagram @vamonessa.',
+    'Condições de uso do Painel Vamo Nessa, ferramenta interna de análise e relacionamento do Instagram @vamonessasp.',
 }
 
 export default function TermsPage() {

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     template: '%s · Painel Vamo Nessa',
   },
   description:
-    'Painel interno de análise de crescimento e relacionamento do Instagram @vamonessa.',
+    'Painel interno de análise de crescimento e relacionamento do Instagram @vamonessasp.',
   robots: { index: false, follow: false },
 }
 
