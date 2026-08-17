@@ -177,9 +177,15 @@ create index instagram_media_caption_trgm_idx on instagram_media using gin (to_t
 -- não a servir. Se migrarmos para Facebook Login, `reposts` passa a ser
 -- preenchível sem alterar o schema.
 --
--- Consequência de produto: 255 dos 256 conteúdos são REELS, e REELS não expõe
--- `follows`. Logo NÃO existe atribuição oficial de seguidores por conteúdo
--- nesta conta, e a análise pós-publicação depende de account_snapshots.
+-- ATENÇÃO À REDAÇÃO: a interface nativa do Instagram EXIBE seguidores por Reel.
+-- O dado existe e o Instagram o calcula. O que está verificado é que a API que
+-- usamos não o EXPÕE. São afirmações diferentes: isto é limitação de exposição
+-- da API, não inexistência da métrica. Por isso nenhuma coluna é removida.
+--
+-- Consequência de produto: 255 dos 256 conteúdos são REELS. Enquanto `follows`
+-- não vier por Reel, a análise pós-publicação usa account_snapshots e a UI diz
+-- "crescimento observado após a publicação", nunca "seguidores gerados pelo
+-- Reel". Se a API passar a expor, o painel exibe a métrica oficial sem migração.
 create table media_insight_snapshots (
   id                       bigserial primary key,
   media_id                 uuid not null references instagram_media(id) on delete cascade,

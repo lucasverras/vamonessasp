@@ -90,13 +90,31 @@ vem de `/insights`.**
 
 ## Consequência de produto
 
-O acervo é **255 REELS + 1 FEED**. Como REELS não expõe `follows`, **não existe
-atribuição oficial de seguidores por conteúdo em 99,6% do acervo**.
+### Distinção que precisa ficar explícita
 
-Por isso o painel mostra *"crescimento observado da conta após a publicação"*,
-derivado de `account_snapshots` (nossos, horários), e nunca *"seguidores gerados
-pelo Reel"*. No único post de FEED, `follows` oficial é exibido e rotulado como
-métrica da Meta.
+Duas afirmações diferentes, que não podem ser confundidas:
+
+| Afirmação | Verdade |
+|---|---|
+| "O Instagram não tem seguidores por Reel" | ❌ **FALSO.** A interface nativa do Instagram exibe esse número nos Insights de cada Reel. O dado **existe** e o Instagram o calcula |
+| "A API pública que conseguimos usar não expõe `follows` para Reel" | ✅ **Verificado** para Instagram Login (7 mídias × 5 versões). Pendente de verificação para Facebook Login |
+
+A ausência do dado na nossa resposta é uma **limitação de exposição da API**, não
+uma inexistência da métrica. O schema reflete isso: `follows` permanece como
+coluna nullable, aguardando disponibilidade futura da API — nunca foi removida.
+
+### Como o painel se comporta
+
+O acervo é **255 REELS + 1 FEED**. Enquanto `follows` não estiver disponível por
+Reel na API que utilizarmos, o painel mostra *"crescimento observado da conta
+após a publicação"*, derivado de `account_snapshots` (nossos, horários), e nunca
+*"seguidores gerados pelo Reel"* — porque essa segunda frase exigiria atribuição
+causal que a API não nos entrega, mesmo que o número exista na interface.
+
+No post de FEED, `follows` oficial é exibido e rotulado como métrica da Meta.
+
+Se a API passar a expor `follows` por Reel (por mudança de login ou de versão), o
+painel passa a exibir a métrica oficial **sem migração de schema**.
 
 ## Quando reavaliar
 
