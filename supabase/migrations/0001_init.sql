@@ -151,17 +151,35 @@ create index instagram_media_caption_trgm_idx on instagram_media using gin (to_t
 
 -- Snapshots de insights. Append-only: nunca sobrescrever histórico.
 --
--- Disponibilidade CONFIRMADA na sondagem (17/08/2026):
---   REELS ✓ views reach likes comments shares saved total_interactions
---           avg_watch_time_ms total_watch_time_ms skip_rate
---   REELS ✗ follows profile_visits profile_activity  (a API rejeita)
---   FEED  ✓ views reach likes comments shares saved total_interactions
---           follows profile_visits profile_activity
---   AMBOS ✗ reposts  (endpoint de insights não suporta, apesar de documentado)
+-- Disponibilidade verificada em 17/08/2026 com 276 chamadas cobrindo 7 mídias
+-- (2023→2026) x 5 versões da API (v22.0→v26.0). Matriz completa e mensagens de
+-- erro exatas em docs/metricas-disponibilidade.md.
 --
--- Como 255 dos 256 conteúdos são REELS, na prática NÃO existe atribuição
--- oficial de seguidores por conteúdo nesta conta. Daí `follows` ser nullable e
--- a análise pós-publicação usar account_snapshots.
+-- A API rejeita métricas em TRÊS camadas distintas, e a diferença importa:
+--
+--   a) por tipo de mídia — "does not support the X metric for this media
+--      product type". Estrutural e estável.
+--        REELS ✗ follows, profile_visits, profile_activity
+--        FEED  ✗ ig_reels_avg_watch_time, ig_reels_video_view_total_time,
+--                reels_skip_rate
+--
+--   b) pelo endpoint/autenticação — "Instagram Insights Media API endpoint does
+--      not support the metrics: X". A métrica EXISTE no enum da API, mas este
+--      endpoint (Instagram Login) não a serve. Falha em TODOS os tipos e em
+--      TODAS as versões.
+--        AMBOS ✗ reposts
+--
+--   c) explicitamente de outro login — "The metric X is not available on this
+--      endpoint": total_views, total_likes, total_comments, link_clicks.
+--
+-- Todas as colunas abaixo permanecem, inclusive as que hoje voltam NULL: a
+-- capacidade não é removida do modelo, apenas não é preenchida enquanto a API
+-- não a servir. Se migrarmos para Facebook Login, `reposts` passa a ser
+-- preenchível sem alterar o schema.
+--
+-- Consequência de produto: 255 dos 256 conteúdos são REELS, e REELS não expõe
+-- `follows`. Logo NÃO existe atribuição oficial de seguidores por conteúdo
+-- nesta conta, e a análise pós-publicação depende de account_snapshots.
 create table media_insight_snapshots (
   id                       bigserial primary key,
   media_id                 uuid not null references instagram_media(id) on delete cascade,
@@ -178,9 +196,17 @@ create table media_insight_snapshots (
   total_watch_time_ms      bigint,             -- ig_reels_video_view_total_time
   skip_rate                numeric(5,2),       -- reels_skip_rate (%)
 
-  follows                  integer,            -- só FEED/STORY
-  profile_visits           integer,            -- só FEED/STORY
-  profile_activity         integer,            -- só FEED/STORY
+  -- Bloqueadas por TIPO DE MÍDIA: só FEED/STORY. NULL em todo REELS.
+  follows                  integer,
+  profile_visits           integer,
+  profile_activity         integer,
+
+  -- Bloqueada pelo ENDPOINT, não pelo tipo: `reposts` está no enum de métricas
+  -- da API, mas o host graph.instagram.com (Instagram Login) não a serve em
+  -- nenhum tipo nem versão. Anunciada em abr/2026 para Instagram API with
+  -- Facebook Login. Coluna mantida para não descartar a capacidade: se
+  -- migrarmos de login, passa a ser preenchida sem migração de schema.
+  reposts                  integer,
 
   -- Auditoria: nomes das métricas que a API recusou nesta coleta.
   metrics_unavailable      text[] not null default '{}',
