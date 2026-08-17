@@ -11,13 +11,15 @@
     "script": "NODE_OPTIONS=--conditions=react-server tsx"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^1.24.0",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.10.1",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import {
   BarChart3,
+  Bot,
   CalendarRange,
   Clock4,
   LayoutGrid,
@@ -17,6 +18,7 @@ const NAV = [
   { href: '/conteudos', label: 'Conteúdos', icon: BarChart3 },
   { href: '/crescimento', label: 'Crescimento', icon: TrendingUp },
   { href: '/comentarios', label: 'Comentários', icon: MessageSquare },
+  { href: '/revisao', label: 'Revisão IA', icon: Bot },
   { href: '/campanhas', label: 'Campanhas', icon: Send },
   { href: '/horarios', label: 'Horários', icon: Clock4 },
   { href: '/frequencia', label: 'Frequência', icon: CalendarRange },

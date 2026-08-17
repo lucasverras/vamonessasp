@@ -7,6 +7,7 @@ import { syncComentarios } from '@/lib/instagram/comments'
 import { syncMedia, syncMediaInsights } from '@/lib/instagram/media'
 import { expirarVencidos } from '@/lib/campaigns/eligibility'
 import { destravarPresos, processarLote } from '@/lib/campaigns/worker'
+import { analisarPendentes } from '@/lib/ai/analise'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -61,6 +62,13 @@ const JOBS = {
 
   /** Devolve à fila o que ficou preso em SENDING por worker morto. */
   'destravar-fila': async () => ({ destravados: await destravarPresos() }),
+
+  /**
+   * Classificação por IA em SHADOW MODE. Gera e registra; não envia nada, e não
+   * tem caminho para enviar — o worker recusa qualquer ação que não esteja
+   * QUEUED, e estas nascem SHADOW.
+   */
+  'analisar-comentarios': () => analisarPendentes(20),
 } as const
 
 type JobName = keyof typeof JOBS
