@@ -20,6 +20,10 @@ export interface Sessao {
   papel: Papel
   /** Epoch em segundos. */
   exp: number
+  /** Instante de emissão (epoch s). Tokens anteriores à última troca de senha
+   *  são recusados pelas ações do servidor — é a revogação possível num token
+   *  sem estado. */
+  iat: number
 }
 
 const ENC = new TextEncoder()
@@ -64,10 +68,12 @@ function chave(): Promise<CryptoKey> {
 }
 
 export async function assinarSessao(usuario: string, papel: Papel): Promise<string> {
+  const agora = Math.floor(Date.now() / 1000)
   const s: Sessao = {
     usuario,
     papel,
-    exp: Math.floor(Date.now() / 1000) + DURACAO_SESSAO_DIAS * 86_400,
+    exp: agora + DURACAO_SESSAO_DIAS * 86_400,
+    iat: agora,
   }
   const corpo = b64url(ENC.encode(JSON.stringify(s)))
   const assinatura = new Uint8Array(

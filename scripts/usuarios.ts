@@ -22,7 +22,15 @@ async function criar(usuario: string, senha: string, papel: string) {
   const { error } = await db()
     .from('panel_users')
     .upsert(
-      { username: nome, password_hash: await gerarHash(senha), role: papel, is_active: true },
+      {
+        username: nome,
+        password_hash: await gerarHash(senha),
+        role: papel,
+        is_active: true,
+        // Reset de senha derruba as sessões antigas da pessoa: qualquer token
+        // emitido antes deste instante passa a ser recusado pelas ações.
+        password_changed_at: new Date().toISOString(),
+      },
       { onConflict: 'username' },
     )
   if (error) throw new Error(error.message)

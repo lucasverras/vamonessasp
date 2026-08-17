@@ -20,6 +20,21 @@ export async function sessaoAtual(): Promise<Sessao | null> {
 export async function exigirSessao(): Promise<Sessao> {
   const s = await sessaoAtual()
   if (!s) throw new Error('Sessão expirada. Entre de novo.')
+
+  // O middleware valida assinatura e validade — barato, sem banco. AQUI, onde
+  // as ações acontecem, a régua sobe: a conta ainda existe, está ativa, e o
+  // token foi emitido DEPOIS da última troca de senha. É o que torna a troca
+  // de senha uma revogação de fato das sessões antigas.
+  const { data: u } = await db()
+    .from('panel_users')
+    .select('is_active,password_changed_at')
+    .eq('username', s.usuario)
+    .maybeSingle()
+
+  if (!u?.is_active) throw new Error('Conta desativada.')
+  if (u.password_changed_at && s.iat * 1000 < new Date(u.password_changed_at).getTime() - 5000) {
+    throw new Error('Sessão invalidada por troca de senha. Entre de novo.')
+  }
   return s
 }
 

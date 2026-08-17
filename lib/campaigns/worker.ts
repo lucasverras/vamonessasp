@@ -47,8 +47,14 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
     .eq('id', true)
     .single()
 
-  // 1. Kill switch: nada sai, nem é reservado.
-  if (cfg?.kill_switch) return { ...vazio, parouPor: 'KILL_SWITCH' }
+  // 1. Kill switch: nenhuma MENSAGEM sai. Em DRY_RUN o pipeline continua
+  //    processável com o switch travado, porque o branch DRY_RUN encerra antes
+  //    de qualquer chamada à Meta — é o que permite auditar T0→T4 sem destravar
+  //    nada. Em LIVE (ou em qualquer estado que pudesse enviar), para aqui.
+  //    Defesa em profundidade: o branch de envio LIVE reconfere o switch.
+  if (cfg?.kill_switch && cfg?.reply_mode !== 'DRY_RUN') {
+    return { ...vazio, parouPor: 'KILL_SWITCH' }
+  }
 
   // 2. Orçamento da hora.
   const { data: orcamentoRaw } = await db().rpc('orcamento_envio_restante')
@@ -143,6 +149,19 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
         })
         .eq('id', item.id)
       continue
+    }
+
+    // Defesa em profundidade: daqui para baixo é envio REAL. O gate lá em cima
+    // já barrou LIVE+kill_switch, mas uma mudança de config entre o claim e
+    // este ponto não pode escapar.
+    if (cfg?.kill_switch) {
+      r.ignorados += 1
+      await db()
+        .from('comment_actions')
+        .update({ status: 'QUEUED', skip_reason: null, locked_until: null, locked_by: null })
+        .eq('id', item.id)
+      r.parouPor = 'KILL_SWITCH'
+      break
     }
 
     const { data: comentario } = await db()
