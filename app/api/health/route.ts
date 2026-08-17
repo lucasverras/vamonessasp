@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { META_SCOPES } from '@/lib/env'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,6 @@ const REQUIRED = [
   'META_APP_ID',
   'META_APP_SECRET',
   'META_API_VERSION',
-  'META_SCOPES',
   'META_TARGET_IG_USER_ID',
   'META_WEBHOOK_VERIFY_TOKEN',
   'NEXT_PUBLIC_APP_URL',
@@ -51,8 +51,8 @@ export async function GET() {
       // ambiente em execução tem a configuração certa — a variável vive na
       // Vercel, não no repositório, então o código pode estar correto e o
       // deploy rodando com um valor antigo.
-      escopos: (process.env.META_SCOPES ?? '').split(',').filter(Boolean),
-      escoposParecemDoFluxoErrado: (process.env.META_SCOPES ?? '').includes('instagram_business_'),
+      escopos: [...META_SCOPES],
+      escoposVemDoCodigo: true,
       dica:
         missing.length > 0
           ? 'Adicione as variáveis na Vercel (Settings → Environment Variables) e REDEPLOY: ' +

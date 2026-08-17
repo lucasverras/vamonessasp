@@ -9,6 +9,17 @@ import 'server-only'
  * chegam ao navegador — não depende de ninguém lembrar da regra.
  */
 
+/** Escopos do OAuth — Instagram API with Facebook Login. */
+export const META_SCOPES = [
+  'instagram_basic',
+  'instagram_manage_insights',
+  'instagram_manage_comments',
+  'instagram_manage_messages',
+  'pages_show_list',
+  'pages_read_engagement',
+  'pages_manage_metadata',
+] as const
+
 function required(name: string): string {
   const value = process.env[name]
   if (!value) {
@@ -37,8 +48,24 @@ export const env = {
   get metaApiVersion() {
     return process.env.META_API_VERSION ?? 'v26.0'
   },
+  /**
+   * Escopos do OAuth. Definidos em CÓDIGO, não em variável de ambiente.
+   *
+   * Não são segredo e não variam entre ambientes: são uma propriedade da
+   * integração, e mudam apenas quando o próprio código muda. Mantê-los em env
+   * criou uma classe de falha sem contrapartida — o repositório ficava correto
+   * enquanto o deploy rodava com um valor antigo, e o OAuth falhava com
+   * "Invalid Scopes" sem que nada no código estivesse errado.
+   *
+   * São os do Instagram API with Facebook Login. Os instagram_business_*
+   * pertencem ao Instagram Login e a Meta rejeita neste fluxo.
+   *
+   * pages_messaging fica de fora deliberadamente: verificamos que a Private
+   * Reply é aceita sem ele, e permissão a mais é justificativa a mais no
+   * App Review.
+   */
   get metaScopes() {
-    return required('META_SCOPES')
+    return META_SCOPES.join(',')
   },
   get webhookVerifyToken() {
     return required('META_WEBHOOK_VERIFY_TOKEN')
