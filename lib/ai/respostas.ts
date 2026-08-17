@@ -81,6 +81,21 @@ export function exemplosDeTom(intent: string, seed: string): string[] {
 }
 
 /**
+ * Detecta resposta-esquiva: o padrão "não temos essa informação / consulte o
+ * estabelecimento" que o produto PROÍBE como resposta automática. Se o modelo
+ * gerar uma dessas para uma pergunta, a decisão vira revisão humana — trava
+ * determinística, não depende do prompt ser obedecido. Achado da auditoria
+ * adversarial de 17/08/2026: o modelo respondeu "vale checar direto com eles"
+ * para "tem estacionamento?" e o sistema enfileirou.
+ */
+export function pareceRespostaEsquiva(texto: string | null): boolean {
+  if (!texto) return false
+  return /n[ãa]o (temos|tenho|sei|sabemos)|informa[çc][ãa]o (confirmada|precisa)|vale (checar|confirmar|consultar)|consulte? (direto|o local|o estabelecimento)|melhor confirmar|liga(r)? (l[áa]|pra eles)|vamos confirmar|vou confirmar|confirmar (essa|a) informa|te avis(amos|o)|assim que (soubermos|souber)/i.test(
+    texto,
+  )
+}
+
+/**
  * Validação final antes de publicar — a última linha de defesa, estrutural e
  * barata (sem IA). Devolve o motivo da recusa, ou null para aprovado.
  */

@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
-import { exemplosDeTom } from './respostas'
+import { exemplosDeTom, pareceRespostaEsquiva } from './respostas'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -381,8 +381,19 @@ async function gravarAnalise(args: {
   // Trava de segurança independente da IA: mesmo que ela decida enviar, uma
   // intenção da lista never-auto vira revisão humana. A decisão do modelo é
   // preservada em raw_response para auditoria.
+  // Pergunta cuja "resposta" é uma esquiva ("não temos essa informação, vale
+  // checar com eles") é falta de fato disfarçada de resposta — vai para o
+  // humano, que provavelmente SABE. Trava do sistema, não do modelo.
+  const INTENCOES_FACTUAIS = ['localizacao', 'preco', 'horario', 'duvida']
+  const esquiva =
+    INTENCOES_FACTUAIS.includes(a.intencao) &&
+    (pareceRespostaEsquiva(a.resposta_publica) || pareceRespostaEsquiva(a.mensagem_privada))
+
   const forcaRevisao =
-    NUNCA_AUTOMATICO.includes(a.intencao as Intencao) || a.risco === 'alto' || a.exige_humano
+    NUNCA_AUTOMATICO.includes(a.intencao as Intencao) ||
+    a.risco === 'alto' ||
+    a.exige_humano ||
+    esquiva
 
   const decisao = forcaRevisao ? 'HOLD_FOR_REVIEW' : DECISAO_DB[a.decisao]
   const motivo = forcaRevisao
