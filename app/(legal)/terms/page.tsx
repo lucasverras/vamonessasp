@@ -6,8 +6,8 @@ import {
   DataTable,
   Item,
   List,
+  MailLink,
   P,
-  Pending,
   Section,
   Strong,
 } from '../_components/legal-ui'
@@ -258,7 +258,7 @@ export default function TermsPage() {
             ferramenta para dirimir controvérsias, salvo hipótese de foro obrigatório por lei.
           </P>
           <P>
-            Contato: <Pending value={LEGAL.privacyEmail} />
+            Contato: <MailLink address={LEGAL.privacyEmail} />
           </P>
         </Section>
       </div>

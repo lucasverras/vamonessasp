@@ -163,12 +163,13 @@ export function Code({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function Pending({ value }: { value: string }) {
-  const isPending = value.startsWith('PENDENTE')
-  if (!isPending) return <>{value}</>
+export function MailLink({ address }: { address: string }) {
   return (
-    <span className="rounded border border-warn-line bg-warn-soft px-1.5 py-0.5 font-mono text-[0.8125em] text-warn">
-      {value}
-    </span>
+    <a
+      href={`mailto:${address}`}
+      className="font-medium text-accent underline decoration-accent/35 underline-offset-2 transition-colors hover:decoration-accent"
+    >
+      {address}
+    </a>
   )
 }

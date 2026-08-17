@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { LEGAL, LEGAL_ROUTES, pendingLegalFields } from '@/lib/legal'
+import { LEGAL, LEGAL_ROUTES } from '@/lib/legal'
 
 export const metadata: Metadata = {
   // As páginas legais são públicas por exigência da Meta (App Review) e da LGPD.
@@ -8,8 +8,6 @@ export const metadata: Metadata = {
 }
 
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
-  const pending = pendingLegalFields()
-
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md">
@@ -36,18 +34,6 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
           </nav>
         </div>
       </header>
-
-      {pending.length > 0 ? (
-        <div className="border-b border-warn-line bg-warn-soft">
-          <p className="mx-auto max-w-3xl px-5 py-2.5 text-[0.8125rem] leading-relaxed text-warn">
-            <span className="font-medium">Documento incompleto.</span> {pending.length}{' '}
-            {pending.length === 1 ? 'campo obrigatório' : 'campos obrigatórios'} ainda não
-            {pending.length === 1 ? ' foi' : ' foram'} preenchido
-            {pending.length === 1 ? '' : 's'} em <code className="font-mono">lib/legal.ts</code>:{' '}
-            {pending.join(', ')}. Preencha antes de submeter o app à revisão da Meta.
-          </p>
-        </div>
-      ) : null}
 
       <main className="mx-auto max-w-3xl px-5 py-12 sm:py-16">{children}</main>
 

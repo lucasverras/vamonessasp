@@ -7,8 +7,8 @@ import {
   DataTable,
   Item,
   List,
+  MailLink,
   P,
-  Pending,
   Section,
   Strong,
 } from '../_components/legal-ui'
@@ -44,28 +44,20 @@ export default function PrivacyPage() {
         <Section id="quem-somos" n={1} title="Quem é o responsável">
           <P>
             O {LEGAL.appName} é uma ferramenta <Strong>interna e de acesso restrito</Strong>, usada
-            exclusivamente para administrar a conta profissional do Instagram{' '}
-            {LEGAL.instagramHandle}. Não é um serviço aberto ao público e não aceita cadastro de
-            terceiros.
+            exclusivamente pela administração da conta profissional do Instagram{' '}
+            {LEGAL.instagramHandle} para acompanhar o desempenho dos próprios conteúdos e responder
+            a quem interage com eles. Não é um serviço aberto ao público, não aceita cadastro de
+            terceiros e não é oferecido comercialmente.
           </P>
           <P>
-            Controlador dos dados, nos termos da Lei Geral de Proteção de Dados (Lei nº
-            13.709/2018 — LGPD):
+            O tratamento de dados descrito aqui é realizado pela administração de{' '}
+            {LEGAL.instagramHandle}, que atua como controladora nos termos da Lei Geral de Proteção
+            de Dados (Lei nº 13.709/2018 — LGPD). Para qualquer assunto relacionado a privacidade,
+            incluindo o exercício dos direitos previstos na seção 9, o canal de contato é:
           </P>
-          <List>
-            <Item>
-              Responsável: <Pending value={LEGAL.controllerName} />
-            </Item>
-            <Item>
-              Inscrição: <Pending value={LEGAL.controllerDocument} />
-            </Item>
-            <Item>
-              Localidade: <Pending value={LEGAL.controllerLocation} />
-            </Item>
-            <Item>
-              Contato para privacidade: <Pending value={LEGAL.privacyEmail} />
-            </Item>
-          </List>
+          <P>
+            <MailLink address={LEGAL.privacyEmail} />
+          </P>
         </Section>
 
         <Section id="origem" n={2} title="De onde vêm os dados">
@@ -336,7 +328,7 @@ export default function PrivacyPage() {
           </List>
           <P>
             Para exercer qualquer um desses direitos, escreva para{' '}
-            <Pending value={LEGAL.privacyEmail} />. Responderemos em até 15 dias. Para exclusão,
+            <MailLink address={LEGAL.privacyEmail} />. Responderemos em até 15 dias. Para exclusão,
             veja o procedimento detalhado em{' '}
             <Link href="/data-deletion" className="text-accent underline underline-offset-2">
               Exclusão de dados
@@ -364,7 +356,7 @@ export default function PrivacyPage() {
         <Section id="contato" n={12} title="Contato">
           <P>
             Dúvidas, pedidos ou reclamações sobre privacidade:{' '}
-            <Pending value={LEGAL.privacyEmail} />.
+            <MailLink address={LEGAL.privacyEmail} />.
           </P>
           <P>
             Você também pode apresentar reclamação à Autoridade Nacional de Proteção de Dados

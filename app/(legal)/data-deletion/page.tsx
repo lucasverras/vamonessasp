@@ -7,8 +7,8 @@ import {
   DataTable,
   Item,
   List,
+  MailLink,
   P,
-  Pending,
   Section,
   Step,
   Steps,
@@ -69,7 +69,7 @@ export default function DataDeletionPage() {
         <Section id="pedir" n={2} title="Como pedir a exclusão">
           <P>
             <Strong>Caminho 1 — Pedido direto (recomendado).</Strong> Envie um e-mail para{' '}
-            <Pending value={LEGAL.privacyEmail} /> com:
+            <MailLink address={LEGAL.privacyEmail} /> com:
           </P>
           <Steps>
             <Step>
@@ -170,7 +170,7 @@ export default function DataDeletionPage() {
         <Section id="nao-receber" n={5} title="Só não quero receber mensagens">
           <P>
             Se sua intenção é apenas não receber mensagens privadas, sem apagar nada, escreva para{' '}
-            <Pending value={LEGAL.privacyEmail} /> pedindo{' '}
+            <MailLink address={LEGAL.privacyEmail} /> pedindo{' '}
             <Strong>oposição ao envio de mensagens</Strong>. Adicionamos seu identificador a uma
             lista de exclusão permanente e você não será contatado novamente, mesmo que comente de
             novo.
@@ -196,12 +196,9 @@ export default function DataDeletionPage() {
 
         <Section id="contato" n={7} title="Contato">
           <P>
-            Pedidos de exclusão e dúvidas sobre dados pessoais:{' '}
-            <Pending value={LEGAL.privacyEmail} />
-          </P>
-          <P>
-            Responsável: <Pending value={LEGAL.controllerName} /> —{' '}
-            <Pending value={LEGAL.controllerLocation} />
+            Pedidos de exclusão, oposição ao envio de mensagens e dúvidas sobre dados pessoais devem
+            ser enviados para <MailLink address={LEGAL.privacyEmail} />, canal mantido pela
+            administração de {LEGAL.instagramHandle}.
           </P>
         </Section>
       </div>
