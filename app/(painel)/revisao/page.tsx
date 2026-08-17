@@ -1,5 +1,7 @@
 import { AlertTriangle, Bot, Lock, MessageSquare, Send } from 'lucide-react'
 import { db } from '@/lib/db'
+import { AcaoRevisao, IntencaoAutomatica } from '@/components/revisao-item'
+import { INTENCOES, NUNCA_AUTOMATICO } from '@/lib/ai/prompt'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Revisão' }
@@ -39,9 +41,27 @@ export default async function Revisao() {
 
   const { data: cfg } = await db()
     .from('automation_settings')
-    .select('shadow_mode,kill_switch')
+    .select('shadow_mode,kill_switch,auto_approve_intents,never_auto_intents')
     .eq('id', true)
     .single()
+
+  const { data: acoes } = await db()
+    .from('comment_actions')
+    .select('id,analysis_id,action_type,status,generated_text,final_text,edited_by')
+    .in('status', ['SHADOW', 'PENDING_APPROVAL', 'QUEUED', 'SENT', 'REJECTED', 'SKIPPED', 'EXPIRED'])
+    .order('created_at', { ascending: false })
+    .limit(400)
+
+  const { data: acerto } = await db().rpc('acerto_por_intencao')
+  const porAnalise = new Map<string, typeof acoes>()
+  for (const a of acoes ?? []) {
+    if (!a.analysis_id) continue
+    porAnalise.set(a.analysis_id, [...(porAnalise.get(a.analysis_id) ?? []), a])
+  }
+  const acertoPorIntencao = new Map(
+    ((acerto ?? []) as Array<{ intent: string; aprovadas_sem_edicao: number; total_decidido: number }>)
+      .map((r) => [r.intent, r]),
+  )
 
   const { count: pendentes } = await db()
     .from('instagram_comments')
@@ -98,6 +118,35 @@ export default async function Revisao() {
         </p>
       ) : null}
 
+      {/* Etapa 6: liberação por intenção, medida por acerto real. A taxa conta
+          aprovadas SEM edição — "a IA acertou" significa que ninguém precisou
+          reescrever, não apenas que foi aprovada. */}
+      <section className="rise mt-8" style={{ animationDelay: '80ms' }}>
+        <h2 className="font-display text-lg font-semibold tracking-[-0.02em]">
+          Automação por intenção
+        </h2>
+        <p className="mt-1 max-w-2xl text-[0.8125rem] leading-relaxed text-ink-faint">
+          Libere uma intenção só quando o histórico mostrar que ela não precisa de edição. Quatro
+          intenções são bloqueadas no servidor e não podem ser liberadas nem por engano.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {INTENCOES.map((i) => {
+            const r = acertoPorIntencao.get(i)
+            return (
+              <IntencaoAutomatica
+                key={i}
+                intencao={i}
+                rotulo={INTENCAO_ROTULO[i] ?? i}
+                ligada={(cfg?.auto_approve_intents ?? []).includes(i)}
+                proibida={NUNCA_AUTOMATICO.includes(i)}
+                acertos={Number(r?.aprovadas_sem_edicao ?? 0)}
+                total={Number(r?.total_decidido ?? 0)}
+              />
+            )
+          })}
+        </div>
+      </section>
+
       {!analises?.length ? (
         <div className="rise mt-7 rounded-card border border-dashed border-line px-6 py-14 text-center">
           <Bot className="mx-auto size-5 text-ink-faint" />
@@ -117,6 +166,9 @@ export default async function Revisao() {
               eligibility_status: string
             } | null
             const risco = RISCO[(a.risk_level ?? 'NONE') as keyof typeof RISCO] ?? RISCO.NONE
+            const minhas = porAnalise.get(a.id) ?? []
+            const publica = minhas.find((x) => x.action_type === 'PUBLIC_REPLY')
+            const privada = minhas.find((x) => x.action_type === 'PRIVATE_REPLY')
 
             return (
               <li key={a.id} className="rounded-card border border-line bg-canvas p-5">
@@ -169,6 +221,17 @@ export default async function Revisao() {
                         <span className="text-ink-faint">— nada a responder</span>
                       )}
                     </p>
+                    {publica ? (
+                      <div className="mt-3">
+                        <AcaoRevisao
+                          acaoId={publica.id}
+                          tipo="PUBLIC_REPLY"
+                          textoGerado={publica.generated_text ?? ''}
+                          status={publica.status}
+                          editado={Boolean(publica.edited_by)}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                   <div className="rounded-lg border border-line-soft bg-surface/50 p-3.5">
                     <p className="flex items-center gap-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-ink-faint">
@@ -180,6 +243,17 @@ export default async function Revisao() {
                         <span className="text-ink-faint">— retido para humano</span>
                       )}
                     </p>
+                    {privada ? (
+                      <div className="mt-3">
+                        <AcaoRevisao
+                          acaoId={privada.id}
+                          tipo="PRIVATE_REPLY"
+                          textoGerado={privada.generated_text ?? ''}
+                          status={privada.status}
+                          editado={Boolean(privada.edited_by)}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
