@@ -1,70 +1,87 @@
 -- =============================================================================
 -- Painel Vamo Nessa — schema inicial
 --
--- Desenhado a partir de sondagem real da API em 17/08/2026 contra @vamonessasp
--- (30.042 seguidores, 256 mídias: 255 REELS + 1 FEED). As colunas de métrica
--- refletem o que a API DEVOLVE DE FATO para esta conta, não o que a documentação
--- lista. Ver docs/plano-tecnico.md.
+-- Autenticação: Instagram API with Facebook Login (graph.facebook.com).
+-- Decisão e evidência em docs/decisao-login.md.
 --
--- CONVENÇÃO INEGOCIÁVEL:
---   NULL = a Meta não forneceu a métrica (não suportada / erro / indisponível)
---   0    = a Meta forneceu zero
--- As duas coisas nunca são confundidas, no banco nem na interface.
+-- O schema já contempla o fluxo COMPLETO, inclusive as etapas de IA que ainda
+-- não serão implementadas, para que nada precise ser refeito depois:
+--
+--   comentário → webhook → deduplicar → analisar com IA → classificar intenção
+--   → decidir ação → resposta pública → Private Reply → registrar → medir
+--
+-- DUAS CONVENÇÕES INEGOCIÁVEIS
+--
+--   1. NULL ≠ 0. NULL = a Meta não forneceu a métrica. 0 = forneceu zero.
+--   2. Nada de histórico é sobrescrito. Snapshots são append-only.
+--
+-- Disponibilidade de métricas verificada em 17/08/2026 com ~900 chamadas reais.
+-- Ver docs/metricas-disponibilidade.md.
 -- =============================================================================
 
 create extension if not exists pgcrypto;
 
--- Fuso canônico do produto. Usado nas colunas derivadas de recorte temporal.
-create or replace function app_tz() returns text
-  language sql immutable parallel safe as $$ select 'America/Sao_Paulo' $$;
-
 
 -- =============================================================================
--- CONTA
+-- 1. CONEXÃO COM A META
 -- =============================================================================
 
 create table instagram_accounts (
-  id                       uuid primary key default gen_random_uuid(),
-  instagram_user_id        text not null unique,
-  username                 text not null,
-  name                     text,
-  profile_picture_url      text,
-  account_type             text,               -- MEDIA_CREATOR, BUSINESS...
-  followers_count          integer,
-  follows_count            integer,
-  media_count              integer,
+  id                        uuid primary key default gen_random_uuid(),
 
-  -- Token nunca em texto puro. AES-256-GCM: nonce(12) || ciphertext || tag(16).
-  access_token_encrypted   bytea,
-  token_expires_at         timestamptz,
-  scopes                   text[] not null default '{}',
+  -- Instagram
+  instagram_user_id         text not null unique,
+  username                  text not null,
+  name                      text,
+  profile_picture_url       text,
+  account_type              text,
+  followers_count           integer,
+  follows_count             integer,
+  media_count               integer,
 
-  connection_status        text not null default 'DISCONNECTED'
+  -- Facebook (a ponte exigida pelo Facebook Login)
+  facebook_page_id          text,
+  facebook_page_name        text,
+
+  -- Tokens, sempre criptografados (AES-256-GCM: nonce||ciphertext||tag).
+  -- O Page Token derivado de um user token de longa duração NÃO expira
+  -- (verificado: expires_at = 0). Guardamos o user token só para poder
+  -- re-derivar o Page Token se ele for revogado.
+  page_access_token_encrypted bytea,
+  user_access_token_encrypted bytea,
+  user_token_expires_at     timestamptz,
+  scopes                    text[] not null default '{}',
+
+  connection_status         text not null default 'DISCONNECTED'
     check (connection_status in ('CONNECTED','DISCONNECTED','TOKEN_EXPIRED','ERROR')),
-  last_sync_at             timestamptz,
-  last_error_code          text,
-  last_error_message       text,
-  last_error_at            timestamptz,
+  last_sync_at              timestamptz,
+  last_error_code           text,
+  last_error_message        text,
+  last_error_at             timestamptz,
 
-  created_at               timestamptz not null default now(),
-  updated_at               timestamptz not null default now()
+  created_at                timestamptz not null default now(),
+  updated_at                timestamptz not null default now()
 );
 
 comment on column instagram_accounts.followers_count is
-  'Estado atual retornado pela Meta. O histórico vive em account_snapshots e nunca é sobrescrito.';
+  'Estado atual. O histórico vive em account_snapshots e nunca é sobrescrito.';
 
 
--- Snapshot horário. É a ÚNICA fonte de verdade do total de seguidores ao longo
--- do tempo — a Meta não fornece a série histórica de totais, só deltas diários.
--- Também é o que viabiliza "+1h/+3h/+6h/+24h/+48h/+7d após a publicação".
+-- =============================================================================
+-- 2. HISTÓRICO DA CONTA
+-- =============================================================================
+
+-- Snapshot horário. Única fonte de verdade do total de seguidores ao longo do
+-- tempo: a Meta fornece deltas diários, nunca a série de totais. É também o que
+-- viabiliza "+1h/+3h/+24h/+7d após a publicação".
 create table account_snapshots (
-  id                       bigserial primary key,
-  instagram_account_id     uuid not null references instagram_accounts(id) on delete cascade,
-  followers_count          integer,
-  follows_count            integer,
-  media_count              integer,
-  captured_at              timestamptz not null default now(),
-  source                   text not null default 'cron_hourly'
+  id                     bigserial primary key,
+  instagram_account_id   uuid not null references instagram_accounts(id) on delete cascade,
+  followers_count        integer,
+  follows_count          integer,
+  media_count            integer,
+  captured_at            timestamptz not null default now(),
+  source                 text not null default 'cron_hourly'
     check (source in ('cron_hourly','oauth_connect','manual','backfill_estimate')),
   unique (instagram_account_id, captured_at)
 );
@@ -73,34 +90,33 @@ create index account_snapshots_account_time_idx
   on account_snapshots (instagram_account_id, captured_at desc);
 
 
--- Métricas diárias vindas da Meta. Backfill confirmado: até 2 anos.
+-- Métricas diárias da Meta. Backfill verificado: até 2 anos.
 --
--- ATENÇÃO À SEMÂNTICA, verificada na sondagem:
---   new_followers  = métrica `follower_count` da Meta = NOVOS seguidores no dia
---                    (BRUTO, não desconta unfollows). NÃO é o total da conta.
---   net_follows    = métrica `follows_and_unfollows` = seguiram MENOS deixaram
---                    de seguir. A API só devolve agregado por janela, então é
---                    preenchida por consulta dia a dia no backfill; NULL quando
---                    não coletada.
--- Observado: os 2 dias mais recentes voltam 0 por atraso de processamento da
--- Meta. Por isso `is_provisional` — nunca exibir 0 recente como fato.
+-- SEMÂNTICA (verificada, fácil de errar):
+--   new_followers = métrica `follower_count` = NOVOS seguidores no dia, BRUTO,
+--                   sem descontar unfollows. NÃO é o total da conta.
+--   net_follows   = `follows_and_unfollows` = seguiram MENOS deixaram de seguir.
+--                   A API só devolve agregado por janela; preenchido por
+--                   consulta dia a dia. NULL quando não coletado.
+-- Os 2 dias mais recentes voltam 0 por atraso de processamento da Meta — daí
+-- is_provisional. Nunca exibir esse 0 como fato.
 create table account_daily_insights (
-  id                       bigserial primary key,
-  instagram_account_id     uuid not null references instagram_accounts(id) on delete cascade,
-  date                     date not null,
-  new_followers            integer,
-  net_follows              integer,
-  reach                    integer,
-  views                    integer,
-  total_interactions       integer,
-  accounts_engaged         integer,
-  likes                    integer,
-  comments                 integer,
-  shares                   integer,
-  saves                    integer,
-  is_provisional           boolean not null default false,
-  raw                      jsonb,
-  captured_at              timestamptz not null default now(),
+  id                     bigserial primary key,
+  instagram_account_id   uuid not null references instagram_accounts(id) on delete cascade,
+  date                   date not null,
+  new_followers          integer,
+  net_follows            integer,
+  reach                  integer,
+  views                  integer,
+  total_interactions     integer,
+  accounts_engaged       integer,
+  likes                  integer,
+  comments               integer,
+  shares                 integer,
+  saves                  integer,
+  is_provisional         boolean not null default false,
+  raw                    jsonb,
+  captured_at            timestamptz not null default now(),
   unique (instagram_account_id, date)
 );
 
@@ -109,115 +125,92 @@ create index account_daily_insights_date_idx
 
 
 -- =============================================================================
--- CONTEÚDOS
+-- 3. CONTEÚDOS
 -- =============================================================================
 
 create table instagram_media (
-  id                       uuid primary key default gen_random_uuid(),
-  instagram_media_id       text not null unique,
-  instagram_account_id     uuid not null references instagram_accounts(id) on delete cascade,
+  id                     uuid primary key default gen_random_uuid(),
+  instagram_media_id     text not null unique,
+  instagram_account_id   uuid not null references instagram_accounts(id) on delete cascade,
 
-  media_type               text,               -- VIDEO, IMAGE, CAROUSEL_ALBUM
-  media_product_type       text,               -- REELS, FEED, STORY
-  caption                  text,
-  permalink                text,
-  shortcode                text,
-  -- URLs da Meta EXPIRAM. thumbnail_cached_path aponta para o Supabase Storage.
-  thumbnail_url            text,
-  media_url                text,
-  thumbnail_cached_path    text,
-  is_shared_to_feed        boolean,
+  media_type             text,
+  media_product_type     text,
+  caption                text,
+  permalink              text,
+  shortcode              text,
+  -- URLs da Meta EXPIRAM; thumbnail_cached_path aponta para o Supabase Storage.
+  thumbnail_url          text,
+  media_url              text,
+  thumbnail_cached_path  text,
+  is_shared_to_feed      boolean,
 
-  published_at             timestamptz not null,
-  -- Derivadas em America/Sao_Paulo para as análises de horário e frequência.
-  published_weekday        smallint generated always as
+  published_at           timestamptz not null,
+  -- Derivadas em America/Sao_Paulo, para análise de horário e frequência.
+  published_weekday      smallint generated always as
     (extract(isodow from (published_at at time zone 'America/Sao_Paulo'))::smallint) stored,
-  published_hour           smallint generated always as
-    (extract(hour   from (published_at at time zone 'America/Sao_Paulo'))::smallint) stored,
-  published_date_local     date generated always as
+  published_hour         smallint generated always as
+    (extract(hour from (published_at at time zone 'America/Sao_Paulo'))::smallint) stored,
+  published_date_local   date generated always as
     ((published_at at time zone 'America/Sao_Paulo')::date) stored,
 
-  deleted_at               timestamptz,
-  created_at               timestamptz not null default now(),
-  updated_at               timestamptz not null default now()
+  deleted_at             timestamptz,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now()
 );
 
 create index instagram_media_published_idx    on instagram_media (published_at desc);
 create index instagram_media_account_pub_idx  on instagram_media (instagram_account_id, published_at desc);
 create index instagram_media_product_type_idx on instagram_media (media_product_type);
 create index instagram_media_weekday_hour_idx on instagram_media (published_weekday, published_hour);
-create index instagram_media_caption_trgm_idx on instagram_media using gin (to_tsvector('portuguese', coalesce(caption,'')));
+create index instagram_media_caption_fts_idx
+  on instagram_media using gin (to_tsvector('portuguese', coalesce(caption,'')));
 
 
--- Snapshots de insights. Append-only: nunca sobrescrever histórico.
+-- Snapshots de insights, append-only.
 --
--- Disponibilidade verificada em 17/08/2026 com 276 chamadas cobrindo 7 mídias
--- (2023→2026) x 5 versões da API (v22.0→v26.0). Matriz completa e mensagens de
--- erro exatas em docs/metricas-disponibilidade.md.
---
--- A API rejeita métricas em TRÊS camadas distintas, e a diferença importa:
---
---   a) por tipo de mídia — "does not support the X metric for this media
---      product type". Estrutural e estável.
---        REELS ✗ follows, profile_visits, profile_activity
---        FEED  ✗ ig_reels_avg_watch_time, ig_reels_video_view_total_time,
---                reels_skip_rate
---
---   b) pelo endpoint/autenticação — "Instagram Insights Media API endpoint does
---      not support the metrics: X". A métrica EXISTE no enum da API, mas este
---      endpoint (Instagram Login) não a serve. Falha em TODOS os tipos e em
---      TODAS as versões.
---        AMBOS ✗ reposts
---
---   c) explicitamente de outro login — "The metric X is not available on this
---      endpoint": total_views, total_likes, total_comments, link_clicks.
---
--- Todas as colunas abaixo permanecem, inclusive as que hoje voltam NULL: a
--- capacidade não é removida do modelo, apenas não é preenchida enquanto a API
--- não a servir. Se migrarmos para Facebook Login, `reposts` passa a ser
--- preenchível sem alterar o schema.
+-- Verificado por tipo de mídia (Facebook Login):
+--   REELS ✓ views reach likes comments shares saved total_interactions reposts
+--           avg_watch_time_ms total_watch_time_ms skip_rate + agregados total_*
+--   REELS ✗ follows profile_visits profile_activity
+--           → "does not support ... for this media product type", idêntico nos
+--             DOIS logins. NÃO é limitação de login, permissão ou versão.
+--   FEED  ✓ tudo acima exceto as três de reels, MAIS follows/profile_visits/
+--           profile_activity
 --
 -- ATENÇÃO À REDAÇÃO: a interface nativa do Instagram EXIBE seguidores por Reel.
--- O dado existe e o Instagram o calcula. O que está verificado é que a API que
--- usamos não o EXPÕE. São afirmações diferentes: isto é limitação de exposição
--- da API, não inexistência da métrica. Por isso nenhuma coluna é removida.
---
--- Consequência de produto: 255 dos 256 conteúdos são REELS. Enquanto `follows`
--- não vier por Reel, a análise pós-publicação usa account_snapshots e a UI diz
--- "crescimento observado após a publicação", nunca "seguidores gerados pelo
--- Reel". Se a API passar a expor, o painel exibe a métrica oficial sem migração.
+-- O dado existe; a API é que não o expõe. Limitação de EXPOSIÇÃO, não de
+-- existência. Por isso nenhuma coluna é removida.
 create table media_insight_snapshots (
-  id                       bigserial primary key,
-  media_id                 uuid not null references instagram_media(id) on delete cascade,
+  id                     bigserial primary key,
+  media_id               uuid not null references instagram_media(id) on delete cascade,
 
-  views                    integer,
-  reach                    integer,
-  likes                    integer,
-  comments                 integer,
-  shares                   integer,
-  saved                    integer,
-  total_interactions       integer,
+  views                  integer,
+  reach                  integer,
+  likes                  integer,
+  comments               integer,
+  shares                 integer,
+  saved                  integer,
+  reposts                integer,
+  total_interactions     integer,
 
-  avg_watch_time_ms        integer,            -- ig_reels_avg_watch_time
-  total_watch_time_ms      bigint,             -- ig_reels_video_view_total_time
-  skip_rate                numeric(5,2),       -- reels_skip_rate (%)
+  -- Só REELS
+  avg_watch_time_ms      integer,
+  total_watch_time_ms    bigint,
+  skip_rate              numeric(5,2),
 
-  -- Bloqueadas por TIPO DE MÍDIA: só FEED/STORY. NULL em todo REELS.
-  follows                  integer,
-  profile_visits           integer,
-  profile_activity         integer,
+  -- Só FEED/STORY — NULL em todo REELS
+  follows                integer,
+  profile_visits         integer,
+  profile_activity       integer,
 
-  -- Bloqueada pelo ENDPOINT, não pelo tipo: `reposts` está no enum de métricas
-  -- da API, mas o host graph.instagram.com (Instagram Login) não a serve em
-  -- nenhum tipo nem versão. Anunciada em abr/2026 para Instagram API with
-  -- Facebook Login. Coluna mantida para não descartar a capacidade: se
-  -- migrarmos de login, passa a ser preenchida sem migração de schema.
-  reposts                  integer,
+  -- Agregados que só o Facebook Login expõe (incluem Facebook e impulsionamento)
+  total_views_count      bigint,
+  total_like_count       integer,
+  total_comments_count   integer,
 
-  -- Auditoria: nomes das métricas que a API recusou nesta coleta.
-  metrics_unavailable      text[] not null default '{}',
-  raw                      jsonb,
-  captured_at              timestamptz not null default now(),
+  metrics_unavailable    text[] not null default '{}',
+  raw                    jsonb,
+  captured_at            timestamptz not null default now(),
   unique (media_id, captured_at)
 );
 
@@ -226,77 +219,248 @@ create index media_insight_snapshots_media_time_idx
 
 
 -- =============================================================================
--- COMENTÁRIOS
+-- 4. PESSOAS  —  histórico de interação e blacklist
+-- =============================================================================
+
+-- Uma linha por pessoa que já interagiu. É o que permite "já falamos com essa
+-- pessoa antes?", cooldown e blacklist, e alimenta o contexto da IA.
+create table instagram_users (
+  id                        uuid primary key default gen_random_uuid(),
+  instagram_user_id         text not null unique,     -- IGSID
+  username                  text,
+
+  first_seen_at             timestamptz not null default now(),
+  last_seen_at              timestamptz not null default now(),
+  comments_count            integer not null default 0,
+  public_replies_count      integer not null default 0,
+  private_replies_count     integer not null default 0,
+  last_private_reply_at     timestamptz,
+  last_intent               text,
+
+  -- Blacklist: nunca mais contatar, por pedido da pessoa ou decisão nossa.
+  is_blacklisted            boolean not null default false,
+  blacklist_reason          text,
+  blacklisted_at            timestamptz,
+  blacklisted_by            text,
+
+  notes                     text,
+  created_at                timestamptz not null default now(),
+  updated_at                timestamptz not null default now()
+);
+
+create index instagram_users_username_idx    on instagram_users (lower(username));
+create index instagram_users_blacklist_idx   on instagram_users (is_blacklisted) where is_blacklisted;
+create index instagram_users_last_dm_idx     on instagram_users (last_private_reply_at desc nulls last);
+
+
+-- =============================================================================
+-- 5. COMENTÁRIOS
 -- =============================================================================
 
 create table instagram_comments (
-  id                       uuid primary key default gen_random_uuid(),
-  instagram_comment_id     text not null unique,          -- idempotência do webhook
-  media_id                 uuid references instagram_media(id) on delete set null,
-  instagram_media_id       text not null,
+  id                      uuid primary key default gen_random_uuid(),
+  instagram_comment_id    text not null unique,        -- idempotência do webhook
+  media_id                uuid references instagram_media(id) on delete set null,
+  instagram_media_id      text not null,
+  user_id                 uuid references instagram_users(id) on delete set null,
 
-  instagram_user_id        text,                          -- IGSID; sem ele não há DM
-  username                 text,
-  text                     text,
-  parent_comment_id        text,
-  is_from_account          boolean not null default false,
+  instagram_user_id       text,
+  username                text,
+  text                    text,
+  parent_comment_id       text,
+  is_from_account         boolean not null default false,
 
-  commented_at             timestamptz not null,
-  received_at              timestamptz not null default now(),
-  source                   text not null default 'sync' check (source in ('webhook','sync')),
+  commented_at            timestamptz not null,
+  received_at             timestamptz not null default now(),
+  source                  text not null default 'sync' check (source in ('webhook','sync')),
 
-  eligibility_status       text not null default 'ELIGIBLE'
+  -- Elegibilidade para Private Reply. Janela oficial: 7 dias da CRIAÇÃO do
+  -- comentário — não do recebimento do webhook.
+  eligibility_status      text not null default 'ELIGIBLE'
     check (eligibility_status in ('ELIGIBLE','SENT','FAILED','EXPIRED','NOT_ELIGIBLE')),
-  -- Janela oficial de private reply: 7 dias da CRIAÇÃO do comentário.
-  eligibility_expires_at   timestamptz not null,
-  not_eligible_reason      text,
+  eligibility_expires_at  timestamptz not null,
+  not_eligible_reason     text,
 
-  private_reply_sent_at    timestamptz,
-  private_reply_message_id text,
-  failure_reason           text,
+  -- Estágio no pipeline de IA
+  analysis_status         text not null default 'PENDING'
+    check (analysis_status in ('PENDING','ANALYZING','ANALYZED','FAILED','SKIPPED')),
 
-  deleted_at               timestamptz,
-  created_at               timestamptz not null default now(),
-  updated_at               timestamptz not null default now()
+  deleted_at              timestamptz,
+  created_at              timestamptz not null default now(),
+  updated_at              timestamptz not null default now()
 );
 
-create index instagram_comments_commented_idx   on instagram_comments (commented_at desc);
-create index instagram_comments_media_idx       on instagram_comments (instagram_media_id);
-create index instagram_comments_user_idx        on instagram_comments (instagram_user_id);
--- Índice da fila operacional: "quem ainda pode receber mensagem".
+create index instagram_comments_commented_idx on instagram_comments (commented_at desc);
+create index instagram_comments_media_idx     on instagram_comments (instagram_media_id);
+create index instagram_comments_user_idx      on instagram_comments (instagram_user_id);
+create index instagram_comments_analysis_idx  on instagram_comments (analysis_status)
+  where analysis_status in ('PENDING','ANALYZING');
 create index instagram_comments_eligible_idx
   on instagram_comments (eligibility_status, eligibility_expires_at desc)
   where deleted_at is null;
 
 
 -- =============================================================================
--- MENSAGENS E CAMPANHAS
+-- 6. CAMADA DE IA
+-- =============================================================================
+
+-- Prompts versionados. Uma análise SEMPRE referencia a versão exata usada, para
+-- que a auditoria futura saiba por que o sistema disse o que disse.
+create table ai_prompts (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  version         integer not null,
+  system_prompt   text not null,
+  user_template   text not null,
+  model           text not null,
+  params          jsonb not null default '{}',
+  status          text not null default 'ACTIVE' check (status in ('ACTIVE','ARCHIVED')),
+  created_at      timestamptz not null default now(),
+  unique (name, version)
+);
+
+
+-- Uma análise por tentativa. Guarda o que a IA classificou E o que ela TERIA
+-- respondido — em shadow mode nada é enviado, só registrado.
+create table comment_analyses (
+  id                       uuid primary key default gen_random_uuid(),
+  comment_id               uuid not null references instagram_comments(id) on delete cascade,
+
+  model                    text not null,
+  prompt_id                uuid references ai_prompts(id) on delete set null,
+  prompt_name              text,
+  prompt_version           integer,
+
+  -- Classificação
+  intent                   text,
+  intent_confidence        numeric(4,3) check (intent_confidence between 0 and 1),
+  secondary_intents        text[] not null default '{}',
+  sentiment                text,
+  language                 text,
+
+  -- Moderação e risco
+  risk_level               text check (risk_level in ('NONE','LOW','MEDIUM','HIGH')),
+  risk_reasons             text[] not null default '{}',
+  requires_human           boolean not null default true,
+
+  -- O que a IA produziria
+  suggested_public_reply   text,
+  suggested_private_reply  text,
+  cta_strategy             text,     -- como o convite a seguir foi construído
+  cta_included             boolean,
+
+  -- Decisão do sistema e o PORQUÊ — exigência explícita do produto
+  decision                 text check (decision in
+    ('SEND_BOTH','SEND_PUBLIC_ONLY','SEND_PRIVATE_ONLY','HOLD_FOR_REVIEW','SKIP')),
+  decision_reason          text,
+
+  -- Auditoria
+  input_snapshot           jsonb,    -- exatamente o que a IA recebeu
+  raw_response             jsonb,
+  tokens_in                integer,
+  tokens_out               integer,
+  latency_ms               integer,
+  error_message            text,
+  created_at               timestamptz not null default now()
+);
+
+create index comment_analyses_comment_idx on comment_analyses (comment_id, created_at desc);
+create index comment_analyses_intent_idx  on comment_analyses (intent, created_at desc);
+create index comment_analyses_risk_idx    on comment_analyses (risk_level)
+  where risk_level in ('MEDIUM','HIGH');
+
+
+-- =============================================================================
+-- 7. AÇÕES  —  resposta pública e Private Reply no MESMO pipeline
+--
+-- Unificar as duas em uma tabela mantém aprovação, fila, retry, idempotência e
+-- auditoria em um lugar só, em vez de duplicar a lógica.
+-- =============================================================================
+
+create table comment_actions (
+  id                  uuid primary key default gen_random_uuid(),
+  comment_id          uuid not null references instagram_comments(id) on delete cascade,
+  analysis_id         uuid references comment_analyses(id) on delete set null,
+  campaign_id         uuid,          -- FK adicionada após dm_campaigns
+
+  action_type         text not null check (action_type in ('PUBLIC_REPLY','PRIVATE_REPLY')),
+  -- SHADOW  = geramos e registramos, mas jamais enviamos
+  -- MANUAL  = exige aprovação humana
+  -- AUTO    = liberado por intenção, após termos dados de acerto
+  mode                text not null default 'SHADOW' check (mode in ('SHADOW','MANUAL','AUTO')),
+
+  status              text not null default 'SHADOW' check (status in
+    ('SHADOW','PENDING_APPROVAL','APPROVED','REJECTED','QUEUED','SENDING',
+     'SENT','FAILED','SKIPPED','EXPIRED')),
+
+  generated_text      text,          -- o que a IA produziu, imutável
+  final_text          text,          -- o que de fato saiu (pode ter sido editado)
+  edited_by           text,
+  approved_by         text,
+  approved_at         timestamptz,
+  rejected_by         text,
+  rejected_reason     text,
+
+  -- Fila
+  attempts            integer not null default 0,
+  next_attempt_at     timestamptz not null default now(),
+  locked_until        timestamptz,
+  locked_by           text,
+
+  sent_at             timestamptz,
+  external_id         text,          -- message_id ou id da resposta pública
+  external_recipient_id text,
+
+  error_code          text,
+  error_message       text,
+  error_class         text check (error_class in ('PERMANENT','TEMPORARY','TOKEN')),
+  skip_reason         text,          -- por que NÃO enviamos
+
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+-- IDEMPOTÊNCIA. A Meta permite UMA Private Reply por comentário, para sempre.
+-- Garantido por constraint, não por lógica: um worker que reprocesse um lote
+-- travado não consegue enviar duas vezes.
+create unique index comment_actions_one_send_per_comment_type
+  on comment_actions (comment_id, action_type) where status = 'SENT';
+
+create index comment_actions_queue_idx
+  on comment_actions (status, next_attempt_at)
+  where status in ('QUEUED','SENDING');
+create index comment_actions_review_idx
+  on comment_actions (status, created_at desc)
+  where status in ('SHADOW','PENDING_APPROVAL');
+create index comment_actions_comment_idx on comment_actions (comment_id);
+
+
+-- =============================================================================
+-- 8. CAMPANHAS EM MASSA  (mensagem fixa, caminho independente da IA)
 -- =============================================================================
 
 create table dm_templates (
-  id           uuid primary key default gen_random_uuid(),
-  name         text not null,
-  body         text not null,
-  status       text not null default 'ACTIVE' check (status in ('ACTIVE','ARCHIVED')),
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  body        text not null,
+  status      text not null default 'ACTIVE' check (status in ('ACTIVE','ARCHIVED')),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 create table dm_campaigns (
   id               uuid primary key default gen_random_uuid(),
   name             text not null,
-  status           text not null default 'DRAFT'
-    check (status in ('DRAFT','QUEUED','RUNNING','PAUSED','COMPLETED','FAILED')),
-  -- Congelado na criação. Alterar o template depois NUNCA altera o que foi enviado.
+  status           text not null default 'DRAFT' check (status in
+    ('DRAFT','QUEUED','RUNNING','PAUSED','COMPLETED','FAILED')),
+  -- Congelado na criação. Editar o template depois NUNCA altera o que foi enviado.
   message_snapshot text not null,
   template_id      uuid references dm_templates(id) on delete set null,
   is_ab_test       boolean not null default false,
-
   total_recipients integer not null default 0,
   sent_count       integer not null default 0,
   failed_count     integer not null default 0,
   skipped_count    integer not null default 0,
-
   created_at       timestamptz not null default now(),
   started_at       timestamptz,
   completed_at     timestamptz,
@@ -305,7 +469,6 @@ create table dm_campaigns (
 
 create index dm_campaigns_status_idx on dm_campaigns (status, created_at desc);
 
--- Estrutura pronta para teste A/B sem que nada dependa dela hoje.
 create table dm_campaign_variants (
   id               uuid primary key default gen_random_uuid(),
   campaign_id      uuid not null references dm_campaigns(id) on delete cascade,
@@ -315,54 +478,58 @@ create table dm_campaign_variants (
   unique (campaign_id, label)
 );
 
-create table dm_campaign_recipients (
-  id             uuid primary key default gen_random_uuid(),
-  campaign_id    uuid not null references dm_campaigns(id) on delete cascade,
-  comment_id     uuid not null references instagram_comments(id) on delete cascade,
-  variant_id     uuid references dm_campaign_variants(id) on delete set null,
+alter table comment_actions
+  add constraint comment_actions_campaign_fk
+  foreign key (campaign_id) references dm_campaigns(id) on delete set null;
 
-  status         text not null default 'PENDING'
-    check (status in ('PENDING','SENDING','SENT','FAILED','SKIPPED')),
-  attempts       integer not null default 0,
-  next_attempt_at timestamptz not null default now(),
-  locked_until   timestamptz,
-  locked_by      text,
+alter table comment_actions add column variant_id uuid
+  references dm_campaign_variants(id) on delete set null;
 
-  sent_at        timestamptz,
-  ig_message_id  text,
-  ig_recipient_id text,
-  error_code     text,
-  error_message  text,
-  error_class    text check (error_class in ('PERMANENT','TEMPORARY','TOKEN')),
+create index comment_actions_campaign_idx on comment_actions (campaign_id, status);
 
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now(),
-  unique (campaign_id, comment_id)
-);
 
--- IDEMPOTÊNCIA: a Meta permite UMA private reply por comentário, para sempre.
--- Isto é garantido por constraint, não por lógica de aplicação — um worker que
--- reprocesse um lote travado não consegue enviar duas vezes.
-create unique index dm_recipients_one_send_per_comment
-  on dm_campaign_recipients (comment_id) where status = 'SENT';
-
--- Índice de claim da fila (FOR UPDATE SKIP LOCKED).
-create index dm_recipients_queue_idx
-  on dm_campaign_recipients (status, next_attempt_at)
-  where status in ('PENDING','SENDING');
-
--- Respostas recebidas às nossas DMs, via webhook `messages` (fase 5).
+-- Respostas que as pessoas mandam de volta na DM, via webhook `messages`.
 create table dm_replies_received (
-  id                uuid primary key default gen_random_uuid(),
-  instagram_user_id text not null,
-  comment_id        uuid references instagram_comments(id) on delete set null,
-  text              text,
-  received_at       timestamptz not null default now()
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid references instagram_users(id) on delete set null,
+  instagram_user_id  text not null,
+  action_id          uuid references comment_actions(id) on delete set null,
+  text               text,
+  received_at        timestamptz not null default now()
 );
+
+create index dm_replies_received_user_idx on dm_replies_received (instagram_user_id, received_at desc);
 
 
 -- =============================================================================
--- INFRAESTRUTURA
+-- 9. CONTROLE DE AUTOMAÇÃO  —  kill switch, cooldown, tetos
+-- =============================================================================
+
+create table automation_settings (
+  id                      boolean primary key default true check (id),   -- singleton
+  -- Desliga TODO envio imediatamente. Verificado pelo worker a cada lote.
+  kill_switch             boolean not null default true,
+  -- Enquanto true, a IA gera e registra mas nada é enviado.
+  shadow_mode             boolean not null default true,
+  -- Intenções liberadas para envio automático. Vazio = tudo exige aprovação.
+  auto_approve_intents    text[] not null default '{}',
+  -- Intenções que NUNCA podem ser automáticas, mesmo se listadas acima.
+  never_auto_intents      text[] not null default
+    '{critica,situacao_delicada,oportunidade_comercial,spam}',
+  min_confidence_for_auto numeric(4,3) not null default 0.850,
+  dm_hourly_cap           integer not null default 600,   -- limite oficial: 750/h
+  dm_daily_cap            integer not null default 2000,
+  cooldown_days_per_user  integer not null default 90,
+  require_approval        boolean not null default true,
+  updated_at              timestamptz not null default now(),
+  updated_by              text
+);
+
+insert into automation_settings (id) values (true);
+
+
+-- =============================================================================
+-- 10. INFRAESTRUTURA
 -- =============================================================================
 
 create table webhook_events (
@@ -403,7 +570,7 @@ create table app_users (
 
 
 -- =============================================================================
--- updated_at automático
+-- 11. updated_at automático
 -- =============================================================================
 
 create or replace function touch_updated_at() returns trigger
@@ -417,23 +584,66 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'instagram_accounts','instagram_media','instagram_comments',
-    'dm_templates','dm_campaign_recipients'
+    'instagram_accounts','instagram_media','instagram_comments','instagram_users',
+    'dm_templates','comment_actions'
   ] loop
     execute format(
-      'create trigger %I_touch before update on %I
-         for each row execute function touch_updated_at()', t || '_updated', t);
+      'create trigger %I before update on %I for each row execute function touch_updated_at()',
+      t || '_touch', t);
   end loop;
 end $$;
 
 
 -- =============================================================================
--- ROW LEVEL SECURITY
+-- 12. FUNIL
 --
--- Postura: negar tudo por padrão. O service role (usado apenas no servidor)
--- ignora RLS por definição e é quem escreve. Usuários autenticados presentes em
--- app_users podem apenas LER, e nunca a coluna de token — por isso o token vive
--- em instagram_accounts, que não recebe policy de leitura alguma.
+-- Cada etapa vem de um fato registrado. NÃO existe etapa "DM → seguiu": a Meta
+-- não fornece atribuição individual de follow. O crescimento aparece ao lado,
+-- como associação temporal, nunca como causa.
+-- =============================================================================
+
+create view funnel_daily as
+select
+  d.dia,
+  d.comentarios_recebidos,
+  d.comentarios_classificados,
+  d.respostas_publicas_enviadas,
+  d.private_replies_elegiveis,
+  d.private_replies_enviadas,
+  d.respostas_recebidas_dm,
+  i.new_followers,
+  i.net_follows
+from (
+  select
+    (c.commented_at at time zone 'America/Sao_Paulo')::date as dia,
+    count(*)                                                          as comentarios_recebidos,
+    count(*) filter (where c.analysis_status = 'ANALYZED')             as comentarios_classificados,
+    count(*) filter (where exists (
+      select 1 from comment_actions a
+      where a.comment_id = c.id and a.action_type = 'PUBLIC_REPLY' and a.status = 'SENT'))
+                                                                      as respostas_publicas_enviadas,
+    count(*) filter (where c.eligibility_status = 'ELIGIBLE')          as private_replies_elegiveis,
+    count(*) filter (where exists (
+      select 1 from comment_actions a
+      where a.comment_id = c.id and a.action_type = 'PRIVATE_REPLY' and a.status = 'SENT'))
+                                                                      as private_replies_enviadas,
+    count(*) filter (where exists (
+      select 1 from dm_replies_received r where r.instagram_user_id = c.instagram_user_id
+        and r.received_at >= c.commented_at))                          as respostas_recebidas_dm
+  from instagram_comments c
+  where c.deleted_at is null
+  group by 1
+) d
+left join account_daily_insights i on i.date = d.dia;
+
+
+-- =============================================================================
+-- 13. ROW LEVEL SECURITY
+--
+-- Negar por padrão. O service role (só no servidor) ignora RLS e é quem escreve.
+-- Operadores em app_users apenas LEEM. instagram_accounts, webhook_events e
+-- app_users ficam sem policy de leitura de propósito: contêm tokens, payloads
+-- crus e a própria lista de acesso.
 -- =============================================================================
 
 alter table instagram_accounts      enable row level security;
@@ -441,12 +651,16 @@ alter table account_snapshots       enable row level security;
 alter table account_daily_insights  enable row level security;
 alter table instagram_media         enable row level security;
 alter table media_insight_snapshots enable row level security;
+alter table instagram_users         enable row level security;
 alter table instagram_comments      enable row level security;
+alter table ai_prompts              enable row level security;
+alter table comment_analyses        enable row level security;
+alter table comment_actions         enable row level security;
 alter table dm_templates            enable row level security;
 alter table dm_campaigns            enable row level security;
 alter table dm_campaign_variants    enable row level security;
-alter table dm_campaign_recipients  enable row level security;
 alter table dm_replies_received     enable row level security;
+alter table automation_settings     enable row level security;
 alter table webhook_events          enable row level security;
 alter table sync_runs               enable row level security;
 alter table app_users               enable row level security;
@@ -459,16 +673,14 @@ create or replace function is_app_user() returns boolean
   )
 $$;
 
--- Leitura para operadores autorizados. instagram_accounts, webhook_events e
--- app_users ficam DE FORA de propósito: contêm token, payloads crus e a própria
--- lista de acesso. O painel lê esses dados por rotas de servidor.
 do $$
 declare t text;
 begin
   foreach t in array array[
     'account_snapshots','account_daily_insights','instagram_media',
-    'media_insight_snapshots','instagram_comments','dm_templates','dm_campaigns',
-    'dm_campaign_variants','dm_campaign_recipients','dm_replies_received','sync_runs'
+    'media_insight_snapshots','instagram_users','instagram_comments','ai_prompts',
+    'comment_analyses','comment_actions','dm_templates','dm_campaigns',
+    'dm_campaign_variants','dm_replies_received','automation_settings','sync_runs'
   ] loop
     execute format(
       'create policy %I on %I for select to authenticated using (is_app_user())',
