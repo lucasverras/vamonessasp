@@ -44,12 +44,12 @@ export default async function InstagramSettingsPage({
   const conectado = account?.connectionStatus === 'CONNECTED'
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-12">
-      <h1 className="text-2xl font-semibold tracking-[-0.02em]">Instagram</h1>
+    <main className="mx-auto max-w-2xl px-5 py-8 sm:px-8 lg:py-11">
+      <h1 className="font-display text-[1.75rem] font-semibold tracking-[-0.03em] sm:text-[2rem]">Instagram</h1>
       <p className="mt-1 text-sm text-ink-soft">Conexão com a API oficial da Meta.</p>
 
       {params.erro ? (
-        <div className="mt-6 rounded-lg border border-warn-line bg-warn-soft px-4 py-3 text-sm">
+        <div className="mt-6 rounded-lg border border-warn/40 bg-warn-wash px-4 py-3 text-sm">
           <p className="font-medium text-ink">{ERROS[params.erro] ?? 'Falha ao conectar.'}</p>
           {params.detalhe ? (
             <p className="mt-1 font-mono text-[0.75rem] leading-relaxed text-warn">
@@ -65,7 +65,7 @@ export default async function InstagramSettingsPage({
         </div>
       ) : null}
 
-      <section className="mt-6 rounded-xl border border-line bg-surface p-5">
+      <section className="mt-6 rounded-card border border-line bg-canvas p-5">
         {account ? (
           <>
             <div className="flex items-start gap-4">
@@ -89,8 +89,8 @@ export default async function InstagramSettingsPage({
               <span
                 className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.6875rem] font-medium ${
                   conectado
-                    ? 'border-line bg-line-soft text-ink-soft'
-                    : 'border-warn-line bg-warn-soft text-warn'
+                    ? 'border-line bg-accent-wash text-accent'
+                    : 'border-warn/40 bg-warn-wash text-warn'
                 }`}
               >
                 {account.connectionStatus}
@@ -108,7 +108,7 @@ export default async function InstagramSettingsPage({
                   <dt className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
                     {label}
                   </dt>
-                  <dd className="mt-0.5 text-lg font-medium tabular-nums">{value}</dd>
+                  <dd className="mt-0.5 tnum font-display text-xl font-semibold tracking-[-0.02em]">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -118,7 +118,7 @@ export default async function InstagramSettingsPage({
             </p>
 
             {account.lastErrorMessage ? (
-              <div className="mt-4 rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-[0.8125rem]">
+              <div className="mt-4 rounded-lg border border-warn/40 bg-warn-wash px-3 py-2.5 text-[0.8125rem]">
                 <p className="font-medium text-ink">
                   Erro {account.lastErrorCode ?? ''} — {tempo(account.lastErrorAt)}
                 </p>
@@ -136,7 +136,7 @@ export default async function InstagramSettingsPage({
           <Link
             href="/api/auth/instagram/start"
             prefetch={false}
-            className="rounded-lg bg-ink px-3.5 py-2 text-[0.8125rem] font-medium text-canvas transition-opacity hover:opacity-90"
+            className="rounded-lg bg-accent px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
           >
             {account ? 'Reautorizar' : 'Conectar Instagram'}
           </Link>
@@ -167,10 +167,10 @@ export default async function InstagramSettingsPage({
                   aria-hidden
                   className={`size-1.5 shrink-0 rounded-full ${
                     r.status === 'SUCCESS'
-                      ? 'bg-ink-faint'
+                      ? 'bg-accent'
                       : r.status === 'RUNNING'
                         ? 'bg-accent'
-                        : 'bg-warn'
+                        : 'bg-danger'
                   }`}
                 />
                 <span className="font-mono text-ink-soft">{r.type}</span>
