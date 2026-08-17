@@ -1,7 +1,7 @@
 import 'server-only'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { z } from 'zod'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { zodTextFormat } from 'openai/helpers/zod'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -20,12 +20,32 @@ import {
  * NÃO envia nada e não tem como enviar: o worker é o único caminho de saída, e
  * ele recusa qualquer ação SHADOW.
  *
- * Modelo padrão: claude-opus-5. Configurável por linha em ai_prompts para
- * quando você quiser trocar o custo pela capacidade — a decisão é sua, e o
- * registro de qual modelo produziu cada análise fica em comment_analyses.model.
+ * Provedor: OpenAI, por escolha do dono do projeto.
+ *
+ * Modelo padrão gpt-5.6-terra ($2/$12 por MTok): o meio da família 5.6. Luna
+ * custa dez vezes menos ($0.20/$1.20) e é a troca óbvia se o custo apertar — mas
+ * a tarefa aqui envolve ironia e ambiguidade, que é exatamente onde um modelo
+ * mais raso erra, e errar aqui significa mandar a mensagem errada para uma pessoa
+ * real. Sol ($5/$30) só se a classificação se mostrar insuficiente.
+ *
+ * Configurável por linha em ai_prompts.model, e comment_analyses.model registra
+ * qual modelo produziu cada análise — então dá para rodar lotes em modelos
+ * diferentes e comparar antes de decidir.
  */
 
-const MODELO_PADRAO = 'claude-opus-5'
+const MODELO_PADRAO = 'gpt-5.6-terra'
+
+/** Preço por milhão de tokens, para o custo estimado do painel. */
+const PRECO_POR_MTOK: Record<string, { entrada: number; saida: number }> = {
+  'gpt-5.6-sol': { entrada: 5, saida: 30 },
+  'gpt-5.6-terra': { entrada: 2, saida: 12 },
+  'gpt-5.6-luna': { entrada: 0.2, saida: 1.2 },
+}
+
+export function custoEstimado(modelo: string, entrada: number, saida: number): number {
+  const p = PRECO_POR_MTOK[modelo] ?? PRECO_POR_MTOK[MODELO_PADRAO]!
+  return (entrada * p.entrada + saida * p.saida) / 1_000_000
+}
 
 /**
  * Schema da saída. Structured outputs garantem que a resposta valide contra
@@ -70,14 +90,14 @@ const RISCO_DB: Record<Analise['risco'], string> = {
   alto: 'HIGH',
 }
 
-let cliente: Anthropic | null = null
-function anthropic(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY) {
+let cliente: OpenAI | null = null
+function openai(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) {
     throw new Error(
-      'ANTHROPIC_API_KEY ausente. A análise por IA não roda sem ela; o resto do sistema funciona.',
+      'OPENAI_API_KEY ausente. A análise por IA não roda sem ela; o resto do sistema funciona.',
     )
   }
-  cliente ??= new Anthropic()
+  cliente ??= new OpenAI()
   return cliente
 }
 
@@ -153,20 +173,18 @@ export async function analisarPendentes(limite = 20) {
       const contexto = await montarContexto(c)
       const inicio = Date.now()
 
-      const resposta = await anthropic().messages.parse({
+      // Responses API com json_schema em modo strict: a saída é validada
+      // contra o schema no servidor, então não há parsing frágil nem retry por
+      // JSON malformado.
+      const resposta = await openai().responses.parse({
         model: MODELO_PADRAO,
-        max_tokens: 16000,
-        system: SYSTEM_PROMPT,
-        thinking: { type: 'adaptive' },
-        output_config: {
-          effort: 'medium',
-          format: zodOutputFormat(Analise),
-        },
-        messages: [{ role: 'user', content: contexto.prompt }],
+        instructions: SYSTEM_PROMPT,
+        input: [{ role: 'user', content: contexto.prompt }],
+        text: { format: zodTextFormat(Analise, 'analise_comentario') },
       })
 
       const latencia = Date.now() - inicio
-      const analise = resposta.parsed_output
+      const analise = resposta.output_parsed
       if (!analise) throw new Error('resposta sem saída estruturada')
 
       await gravarAnalise({
@@ -175,16 +193,18 @@ export async function analisarPendentes(limite = 20) {
         promptId,
         contexto,
         uso: {
-          entrada: resposta.usage.input_tokens,
-          saida: resposta.usage.output_tokens,
+          entrada: resposta.usage?.input_tokens ?? 0,
+          saida: resposta.usage?.output_tokens ?? 0,
           latenciaMs: latencia,
         },
       })
 
       resultado.analisados += 1
-      // Opus 5: $5/MTok entrada, $25/MTok saída.
-      resultado.custoEstimadoUSD +=
-        (resposta.usage.input_tokens * 5 + resposta.usage.output_tokens * 25) / 1_000_000
+      resultado.custoEstimadoUSD += custoEstimado(
+        MODELO_PADRAO,
+        resposta.usage?.input_tokens ?? 0,
+        resposta.usage?.output_tokens ?? 0,
+      )
     } catch (e) {
       resultado.falhas += 1
       await db()

@@ -12,7 +12,7 @@ INTERAÇÃO  → oportunidade → private reply → mais chance de follow
 ## Stack
 
 Next.js 16 · React 19 · TypeScript strict · Tailwind v4 · Supabase Postgres ·
-Recharts · Vercel · Instagram API with Facebook Login · Claude API
+Recharts · Vercel · Instagram API with Facebook Login · OpenAI API
 
 ## Estado
 
@@ -21,7 +21,7 @@ Recharts · Vercel · Instagram API with Facebook Login · Claude API
 | 1 | OAuth, sync de conteúdos e insights, snapshots horários, histórico | ✅ |
 | 2 | Webhook de comentários em tempo real (3s medidos) | ✅ |
 | 3 | Fila de private reply com revalidação, backoff, kill switch | ✅ envio real validado |
-| 4 | IA classifica intenção e escreve respostas, em shadow mode | ✅ requer `ANTHROPIC_API_KEY` |
+| 4 | IA classifica intenção e escreve respostas, em shadow mode | ✅ requer `OPENAI_API_KEY` |
 | 5 | Aprovar, editar ou rejeitar cada sugestão no painel | ✅ |
 | 6 | Liberar automação por intenção, medida por acerto real | ✅ estrutura pronta |
 

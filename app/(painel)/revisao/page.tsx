@@ -2,6 +2,7 @@ import { AlertTriangle, Bot, Lock, MessageSquare, Send } from 'lucide-react'
 import { db } from '@/lib/db'
 import { AcaoRevisao, IntencaoAutomatica } from '@/components/revisao-item'
 import { INTENCOES, NUNCA_AUTOMATICO } from '@/lib/ai/prompt'
+import { custoEstimado } from '@/lib/ai/analise'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Revisão' }
@@ -69,8 +70,10 @@ export default async function Revisao() {
     .eq('analysis_status', 'PENDING')
     .eq('is_from_account', false)
 
+  // Cada análise guarda o modelo que a produziu, então o custo é correto mesmo
+  // depois de trocar de modelo no meio do caminho.
   const custo = (analises ?? []).reduce(
-    (s, a) => s + ((a.tokens_in ?? 0) * 5 + (a.tokens_out ?? 0) * 25) / 1_000_000,
+    (s, a) => s + custoEstimado(a.model ?? '', a.tokens_in ?? 0, a.tokens_out ?? 0),
     0,
   )
 
@@ -153,7 +156,7 @@ export default async function Revisao() {
           <p className="mt-3 text-[0.9375rem] font-medium">Nenhuma análise ainda</p>
           <p className="mx-auto mt-1.5 max-w-md text-[0.8125rem] leading-relaxed text-ink-faint">
             {pendentes
-              ? `${pendentes} comentários estão na fila. Falta a ANTHROPIC_API_KEY no ambiente para o job de análise rodar.`
+              ? `${pendentes} comentários estão na fila. Falta a OPENAI_API_KEY no ambiente para o job de análise rodar.`
               : 'Sem comentários pendentes de análise.'}
           </p>
         </div>
