@@ -14,7 +14,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * exigência da Meta e da LGPD, e o webhook é autenticado por assinatura HMAC.
  */
 
-const PUBLIC_PATHS = ['/privacy', '/terms', '/data-deletion', '/entrar']
+const PUBLIC_PATHS = ['/privacy', '/terms', '/data-deletion', '/entrar', '/api/health']
 const PUBLIC_PREFIXES = ['/api/webhooks/', '/api/cron/', '/_next/', '/favicon']
 
 export function middleware(request: NextRequest) {
