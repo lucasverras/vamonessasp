@@ -179,7 +179,7 @@ export default async function Crescimento() {
                   {posts.map((p) => (
                     <tr
                       key={p.media_id}
-                      className="border-b border-line-soft bg-void/40 last:border-0"
+                      className="border-b border-line-soft/60 last:border-0 odd:bg-transparent even:bg-surface/45"
                     >
                       <td className="max-w-[300px] px-4 py-2.5">
                         <a

@@ -115,7 +115,7 @@ export default async function Frequencia() {
               </thead>
               <tbody>
                 {porFaixa.map((f) => (
-                  <tr key={f.faixa} className="border-b border-line-soft bg-void/40 last:border-0">
+                  <tr key={f.faixa} className="border-b border-line-soft/60 last:border-0 odd:bg-transparent even:bg-surface/45">
                     <td className="px-4 py-2.5 text-[0.875rem] font-medium">{f.faixa}</td>
                     <td className="tnum px-4 py-2.5 text-right text-[0.8125rem] text-ink-faint">
                       {f.semanas}

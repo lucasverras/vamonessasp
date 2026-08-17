@@ -77,7 +77,7 @@ export default async function Horarios() {
             </thead>
             <tbody>
               {porDia.map((d) => (
-                <tr key={d.dia} className="border-b border-line-soft bg-void/40 last:border-0">
+                <tr key={d.dia} className="border-b border-line-soft/60 last:border-0 odd:bg-transparent even:bg-surface/45">
                   <td className="px-4 py-2.5 text-[0.875rem] font-medium">{DIAS[d.dia]}</td>
                   <td className="tnum px-4 py-2.5 text-right text-[0.8125rem] text-ink-faint">
                     {d.posts}

@@ -8,6 +8,7 @@ import { syncMedia, syncMediaInsights } from '@/lib/instagram/media'
 import { expirarVencidos } from '@/lib/campaigns/eligibility'
 import { destravarPresos, processarLote } from '@/lib/campaigns/worker'
 import { analisarPendentes } from '@/lib/ai/analise'
+import { syncFacebook } from '@/lib/facebook/sync'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -59,6 +60,9 @@ const JOBS = {
    * Não faz nada enquanto o kill switch estiver ligado.
    */
   'dm-worker': () => processarLote(10),
+
+  /** Reels da Página do Facebook + auto-match com os contents do Instagram. */
+  'sync-facebook': () => syncFacebook(),
 
   /** Devolve à fila o que ficou preso em SENDING por worker morto. */
   'destravar-fila': async () => ({ destravados: await destravarPresos() }),
