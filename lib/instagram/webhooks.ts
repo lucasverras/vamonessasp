@@ -51,9 +51,30 @@ interface WebhookPayload {
 /**
  * Extrai comentários do payload.
  *
- * O formato exato não está documentado com exemplo completo, então lemos de
- * forma defensiva: cada campo é opcional e o que não vier fica null, em vez de
- * quebrar a entrega inteira por uma chave ausente.
+ * Formato REAL, capturado de uma entrega da Meta em 17/08/2026 — a
+ * documentação não traz exemplo completo:
+ *
+ *   {
+ *     "object": "instagram",
+ *     "entry": [{
+ *       "id": "<IG_USER_ID>",
+ *       "time": 1787000003,
+ *       "changes": [{
+ *         "field": "comments",
+ *         "value": {
+ *           "id": "<COMMENT_ID>",
+ *           "from": { "id": "<IGSID>", "username": "..." },
+ *           "text": "Onde fica?",
+ *           "media": { "id": "<MEDIA_ID>", "media_product_type": "REELS" }
+ *         }
+ *       }]
+ *     }]
+ *   }
+ *
+ * ATENÇÃO: o `value` NÃO traz timestamp nem created_time. A data do comentário
+ * é derivada de `entry.time`, e a leitura defensiva abaixo — que existia por
+ * precaução — acabou sendo o que fez a primeira entrega real funcionar.
+ * Delay medido do comentário até o banco: 3 segundos.
  */
 export function extrairComentarios(payload: unknown): ComentarioNormalizado[] {
   const p = payload as WebhookPayload
