@@ -58,6 +58,14 @@ interface CallOptions {
   method?: 'GET' | 'POST' | 'DELETE'
   body?: Record<string, unknown>
   version?: string
+  /**
+   * Host alternativo. Existe para UM caso específico e documentado: o
+   * backfill histórico. `follower_count` devolve 2 anos em graph.instagram.com
+   * e apenas 30 dias em graph.facebook.com — verificado lado a lado. Como o
+   * passado não é recuperável depois, importamos uma única vez pelo host que o
+   * expõe. A operação corrente permanece toda em graph.facebook.com.
+   */
+  host?: string
   /** Rótulo para log e para sync_runs. Nunca inclui token. */
   label?: string
 }
@@ -65,7 +73,8 @@ interface CallOptions {
 async function call<T>(path: string, options: CallOptions): Promise<MetaResponse<T>> {
   const version = options.version ?? env.metaApiVersion
   const method = options.method ?? 'GET'
-  const url = new URL(`${HOST}/${version}/${path.replace(/^\//, '')}`)
+  const host = options.host ?? HOST
+  const url = new URL(`${host}/${version}/${path.replace(/^\//, '')}`)
 
   for (const [k, v] of Object.entries(options.params ?? {})) {
     if (v !== undefined) url.searchParams.set(k, String(v))
@@ -113,8 +122,9 @@ export async function metaGet<T>(
   token: string,
   params?: CallOptions['params'],
   version?: string,
+  host?: string,
 ): Promise<T> {
-  const { data } = await call<T>(path, { token, params, version })
+  const { data } = await call<T>(path, { token, params, version, host })
   return data
 }
 

@@ -32,7 +32,34 @@ casados por permalink), mesmas métricas, versões v22.0 a v26.0.
 | **total_comments_count** | ❌ campo inexistente | ✅ **101** |
 | follows / profile_visits / profile_activity em REELS | ❌ | ❌ |
 
-Nenhuma métrica foi perdida. Seis foram ganhas.
+Nenhuma métrica de MÍDIA foi perdida. Seis foram ganhas.
+
+### ⚠️ Correção posterior — uma perda real, descoberta em 17/08/2026
+
+A afirmação "superconjunto estrito" estava **incompleta**. A comparação original
+cobriu métricas de mídia e capacidades operacionais, mas não a PROFUNDIDADE do
+histórico de conta. Medido depois, lado a lado, mesma conta:
+
+| Janela de `follower_count` | Instagram Login | Facebook Login |
+|---|---|---|
+| 30 dias | ✅ | ✅ |
+| 90 dias | ✅ | ❌ `(#100) more than 30 days` |
+| 365 dias | ✅ desde 2025-08-18 | ❌ |
+| 2 anos | ✅ (limite da própria Meta) | ❌ |
+
+**O Facebook Login expõe apenas 30 dias de histórico diário de seguidores; o
+Instagram Login expõe 2 anos.**
+
+Isso não reverte a decisão — o histórico é importado UMA vez e depois nossa
+própria série (`account_snapshots` horário + `account_daily_insights`) passa a
+ser a fonte. Mas era uma perda real e não detectada, e o passado não é
+recuperável depois.
+
+**Providência tomada:** a importação histórica foi executada uma única vez pelo
+token de Instagram Login, trazendo **717 dias reais** (28/08/2024 a 14/08/2026).
+`meta-client.ts` aceita um host alternativo exclusivamente para esse caso, com o
+motivo documentado no próprio tipo. A operação corrente segue integralmente em
+`graph.facebook.com` — não há duas integrações em produção.
 
 ### Capacidades operacionais — nada se perde
 
