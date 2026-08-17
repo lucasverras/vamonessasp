@@ -3,7 +3,9 @@ import { safeEqual } from '@/lib/crypto'
 import { env } from '@/lib/env'
 import { syncAccount } from '@/lib/instagram/account'
 import { backfillDailyInsights } from '@/lib/instagram/backfill'
+import { syncComentarios } from '@/lib/instagram/comments'
 import { syncMedia, syncMediaInsights } from '@/lib/instagram/media'
+import { expirarVencidos } from '@/lib/campaigns/eligibility'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -38,6 +40,16 @@ const JOBS = {
 
   /** Métricas diárias da conta. O Facebook Login expõe 30 dias. */
   'backfill-daily': () => backfillDailyInsights(30),
+
+  /**
+   * Reconciliação de comentários. O webhook não garante entrega, e enquanto o
+   * app não estiver Live a Meta não envia nada — este job é o que mantém a
+   * ingestão funcionando de qualquer forma.
+   */
+  'sync-comments': () => syncComentarios(),
+
+  /** Marca como EXPIRED quem passou da janela de 7 dias. */
+  'expirar-elegibilidade': async () => ({ expirados: await expirarVencidos() }),
 } as const
 
 type JobName = keyof typeof JOBS

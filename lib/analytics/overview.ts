@@ -49,7 +49,10 @@ export async function getOverview(days = 30) {
   // Somatório das métricas de conteúdo no período: usa o snapshot MAIS RECENTE
   // de cada mídia, nunca a soma de todos os snapshots — que contaria o mesmo
   // conteúdo várias vezes.
-  const { data: totais } = await db().rpc('overview_media_totals', { desde_param: desde })
+  const { data: totais, error: erroTotais } = await db().rpc('overview_media_totals', {
+    desde_param: desde,
+  })
+  if (erroTotais) throw new Error(`Falha ao agregar métricas: ${erroTotais.message}`)
 
   const serie = (snapshots.data ?? []).filter((s) => s.captured_at >= desde)
   const primeiro = serie[0]?.followers_count ?? null
@@ -110,7 +113,8 @@ export async function getOverview(days = 30) {
 }
 
 export async function getTopContent(limit = 8) {
-  const { data } = await db().rpc('top_media', { limite: limit })
+  const { data, error } = await db().rpc('top_media', { limite: limit })
+  if (error) throw new Error(`Falha ao listar conteúdos: ${error.message}`)
   return (data ?? []) as Array<{
     id: string
     caption: string | null

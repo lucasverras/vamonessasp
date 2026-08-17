@@ -69,7 +69,6 @@ export default async function InstagramSettingsPage({
         {account ? (
           <>
             <div className="flex items-start gap-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {account.profilePictureUrl ? (
                 <img
                   src={account.profilePictureUrl}

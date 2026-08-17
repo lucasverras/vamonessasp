@@ -2,6 +2,7 @@
 import { syncMedia, syncMediaInsights } from '../lib/instagram/media'
 import { syncAccount } from '../lib/instagram/account'
 import { backfillDailyInsights } from '../lib/instagram/backfill'
+import { syncComentarios, assinarWebhooks } from '../lib/instagram/comments'
 
 async function main() {
   const what = process.argv[2] ?? 'media'
@@ -9,6 +10,8 @@ async function main() {
   if (what === 'media') console.log(JSON.stringify(await syncMedia(), null, 1))
   else if (what === 'insights')
     console.log(JSON.stringify(await syncMediaInsights({ limit: Number(process.argv[3]) || undefined }), null, 1))
+  else if (what === 'comentarios') console.log(JSON.stringify(await syncComentarios(), null, 1))
+  else if (what === 'assinar-webhooks') console.log(JSON.stringify(await assinarWebhooks(), null, 1))
   else if (what === 'backfill') console.log(JSON.stringify(await backfillDailyInsights(), null, 1))
   else if (what === 'backfill-historico')
     console.log(JSON.stringify(await backfillDailyInsights(730, {
