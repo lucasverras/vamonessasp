@@ -269,14 +269,18 @@ else:
         page = None
         for p in pages:
             iba = p.get("instagram_business_account") or {}
-            print(f"    - {p.get('name')}  page_id={p.get('id')}  "
+            alvo = str(iba.get("id")) == IG_USER_ID
+            print(f"    {'►' if alvo else ' '} {p.get('name'):32} page_id={p.get('id'):18} "
                   f"IG={iba.get('username') or '—'} {iba.get('id') or ''}")
-            if iba.get("id"):
+            # A Página CORRETA é a que aponta para o MESMO ig_user_id do login A.
+            # Escolher qualquer outra invalida a comparação (bug real, 17/08/2026:
+            # pegar "a última com Instagram" selecionou a conta de outro cliente).
+            if alvo:
                 page = p
         if not page:
-            print("\n  ✗ Nenhuma Página retornou instagram_business_account.")
-            print("    Verifique se as permissões instagram_basic e pages_show_list")
-            print("    foram concedidas ao gerar o token.")
+            print(f"\n  ✗ ABORTADO: nenhuma das {len(pages)} Páginas aponta para o")
+            print(f"    ig_user_id do login A ({IG_USER_ID} = @vamonessasp).")
+            print("    Sem a MESMA conta nos dois lados, a comparação não tem valor.")
         else:
             FB_READY = True
             PAGE_TOKEN, PAGE_ID = page["access_token"], page["id"]
@@ -337,29 +341,91 @@ else:
                 fields_b[f] = bool(hits)
                 print(f"    {'✓' if hits else '✗'} {f:24} {('em ' + ','.join(hits)) if hits else ''}")
 
-            print("\n  capacidades operacionais (não podemos perder ao migrar):")
+            # ---------------- permissões realmente concedidas ----------------
+            print("\n  PERMISSÕES concedidas ao token do Facebook:")
+            perms = request("graph.facebook.com", CURRENT, "me/permissions", {}, FB_TOKEN)
+            record("permissions", "capacidade", "Facebook Login", "graph.facebook.com",
+                   CURRENT, "/me/permissions", "-", perms)
+            granted, declined = set(), set()
+            for p in perms["body"].get("data", []):
+                (granted if p.get("status") == "granted" else declined).add(p["permission"])
+            NEEDED = ["instagram_basic", "instagram_manage_insights",
+                      "instagram_manage_comments", "instagram_manage_messages",
+                      "pages_show_list", "pages_read_engagement",
+                      "pages_manage_metadata", "pages_messaging"]
+            for p in NEEDED:
+                mark = "✓" if p in granted else ("✗ RECUSADA" if p in declined else "✗ ausente")
+                print(f"    {mark:11} {p}")
+            extra_granted = sorted(granted - set(NEEDED))
+            if extra_granted:
+                print(f"    (extras concedidas: {', '.join(extra_granted)})")
+
+            # ---------------- tarefas na Página (MESSAGING é o que libera DM) --
+            tasks = request("graph.facebook.com", CURRENT, "me/accounts",
+                            {"fields": "id,name,tasks"}, FB_TOKEN)
+            record("page_tasks", "capacidade", "Facebook Login", "graph.facebook.com",
+                   CURRENT, "/me/accounts?fields=tasks", PAGE_ID, tasks)
+            for p in tasks["body"].get("data", []):
+                if str(p.get("id")) == str(PAGE_ID):
+                    t = p.get("tasks", [])
+                    print(f"\n  TAREFAS na Página: {', '.join(t) if t else '(nenhuma)'}")
+                    print(f"    MESSAGING presente (requisito de Private Reply)? "
+                          f"{'SIM' if 'MESSAGING' in t else 'NÃO'}")
+                    print(f"    ANALYZE presente (requisito de Insights)? "
+                          f"{'SIM' if 'ANALYZE' in t else 'NÃO'}")
+
+            # ---------------- capacidades operacionais -----------------------
+            print("\n  CAPACIDADES OPERACIONAIS (não podemos perder ao migrar):")
             checks = [
-                ("comentários", f"{mapping['REELS_1']}/comments",
-                 {"fields": "id,text,timestamp,username,from", "limit": 5}),
+                ("ler comentários", f"{mapping['REELS_1']}/comments",
+                 {"fields": "id,text,timestamp,username,from,parent_id,like_count",
+                  "limit": 5}, PAGE_TOKEN),
                 ("insights de conta", f"{IGBA}/insights",
-                 {"metric": "reach", "period": "day", "metric_type": "total_value"}),
+                 {"metric": "reach", "period": "day", "metric_type": "total_value"}, PAGE_TOKEN),
                 ("follower_count histórico", f"{IGBA}/insights",
-                 {"metric": "follower_count", "period": "day"}),
-                ("assinaturas de webhook", f"{PAGE_ID}/subscribed_apps", {}),
-                ("conversas (messaging)", f"{PAGE_ID}/conversations",
-                 {"platform": "instagram", "limit": 1}),
+                 {"metric": "follower_count", "period": "day"}, PAGE_TOKEN),
+                ("follows_and_unfollows", f"{IGBA}/insights",
+                 {"metric": "follows_and_unfollows", "period": "day",
+                  "metric_type": "total_value"}, PAGE_TOKEN),
+                ("assinaturas de webhook", f"{PAGE_ID}/subscribed_apps", {}, PAGE_TOKEN),
+                ("conversations (messaging)", f"{PAGE_ID}/conversations",
+                 {"platform": "instagram", "limit": 1}, PAGE_TOKEN),
+                ("perfil IG pela Página", f"{IGBA}",
+                 {"fields": "id,username,followers_count,media_count,profile_picture_url"},
+                 PAGE_TOKEN),
             ]
-            for nome, path, params in checks:
-                res = request("graph.facebook.com", CURRENT, path, params, PAGE_TOKEN)
+            for nome, path, params, tok in checks:
+                res = request("graph.facebook.com", CURRENT, path, params, tok)
                 ok = "error" not in res["body"]
                 record(nome, "capacidade", "Facebook Login", "graph.facebook.com",
                        CURRENT, "/" + path, PAGE_ID, res)
                 extra = ""
-                if ok and nome == "comentários":
+                if ok and nome == "ler comentários":
                     ds = res["body"].get("data", [])
-                    extra = f"{len(ds)} lidos; from presente: {bool(ds and ds[0].get('from'))}"
+                    has_from = bool(ds and ds[0].get("from"))
+                    fromk = sorted(ds[0].get("from", {}).keys()) if has_from else []
+                    extra = f"{len(ds)} lidos · from presente: {has_from} {fromk}"
+                elif ok and nome == "perfil IG pela Página":
+                    b = res["body"]
+                    extra = f"@{b.get('username')} · {b.get('followers_count')} seguidores"
+                elif ok:
+                    extra = json.dumps(res["body"].get("data", res["body"]),
+                                       ensure_ascii=False)[:70]
                 print(f"    {'✓' if ok else '✗'} {nome:26} "
                       f"{extra or (res['body'].get('error',{}).get('message','')[:52])}")
+
+            # Private Reply: NÃO enviamos mensagem real — isso escreveria para uma
+            # pessoa de verdade. Verificamos os pré-requisitos oficiais.
+            print("\n  PRIVATE REPLY — pré-requisitos (nenhuma mensagem foi enviada):")
+            pr = [("permissão instagram_manage_comments", "instagram_manage_comments" in granted),
+                  ("permissão instagram_manage_messages", "instagram_manage_messages" in granted),
+                  ("permissão pages_messaging", "pages_messaging" in granted),
+                  ("Page Access Token obtido", bool(PAGE_TOKEN)),
+                  ("endpoint /{page-id}/messages alcançável",
+                   request("graph.facebook.com", CURRENT, f"{PAGE_ID}/messages",
+                           {}, PAGE_TOKEN)["status"] in (400, 403))]
+            for nome, ok in pr:
+                print(f"    {'✓' if ok else '✗'} {nome}")
 
 
 # ================================================================== RESUMO
