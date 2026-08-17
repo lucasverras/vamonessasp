@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagram/account'
 import { getAutomacao } from '@/lib/campaigns/create'
+import { definirCadencia, definirModoAutomacao } from './acoes-automacao'
 import { alternarKillSwitch } from '../../comentarios/acoes'
 
 export const dynamic = 'force-dynamic'
@@ -194,7 +195,9 @@ export default async function InstagramSettingsPage({
             ['Estado', automacao?.kill_switch ? 'Travado' : 'Liberado'],
             ['Teto por hora', String(automacao?.dm_hourly_cap ?? '—')],
             ['Teto por dia', String(automacao?.dm_daily_cap ?? '—')],
-            ['Cooldown', `${automacao?.cooldown_days_per_user ?? '—'} dias`],
+            // O cooldown global foi removido do produto: a regra agora é uma
+            // DM por pessoa POR CONTEÚDO, garantida por constraint.
+            ['Regra de DM', '1 por pessoa+conteúdo'],
           ].map(([k, v]) => (
             <div key={k}>
               <dt className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">{k}</dt>
@@ -202,6 +205,124 @@ export default async function InstagramSettingsPage({
             </div>
           ))}
         </dl>
+      </section>
+
+      {/* Automação de respostas: o modo é a decisão de produto mais importante
+          depois do kill switch. DRY_RUN é o default e o estado seguro. */}
+      <section className="mt-6 rounded-card border border-line bg-canvas p-5">
+        <h2 className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">
+          Automação de respostas
+        </h2>
+        <p className="mt-1 max-w-lg text-[0.8125rem] leading-relaxed text-ink-faint">
+          {automacao?.reply_mode === 'LIVE'
+            ? 'LIVE: respostas aprovadas pelas regras saem sozinhas, com atraso humano.'
+            : automacao?.reply_mode === 'DRY_RUN'
+              ? 'Dry-run: o pipeline inteiro roda — classifica, decide, agenda, valida — e para na beira do envio. Nada é publicado.'
+              : 'Desligada: a IA analisa e registra, nada entra na fila sozinho.'}
+          {automacao?.automation_started_at
+            ? ` Marco de início: ${new Date(automacao.automation_started_at).toLocaleString('pt-BR')} — só comentários depois disso entram no automático.`
+            : ' Sem marco de início definido: nada entra no automático ainda.'}
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(['OFF', 'DRY_RUN', 'LIVE'] as const).map((modo) => (
+            <form
+              key={modo}
+              action={async () => {
+                'use server'
+                await definirModoAutomacao(modo)
+              }}
+            >
+              <button
+                type="submit"
+                className={`rounded-lg px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px ${
+                  automacao?.reply_mode === modo
+                    ? modo === 'LIVE'
+                      ? 'bg-danger text-void'
+                      : 'bg-accent text-void'
+                    : 'border border-line text-ink-soft'
+                }`}
+              >
+                {modo === 'OFF' ? 'Desligada' : modo === 'DRY_RUN' ? 'Dry-run' : 'LIVE'}
+              </button>
+            </form>
+          ))}
+        </div>
+
+        <form
+          action={async (form: FormData) => {
+            'use server'
+            await definirCadencia(form)
+          }}
+          className="mt-5 grid gap-4 sm:grid-cols-2"
+        >
+          <label className="block">
+            <span className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+              Atraso mínimo (minutos)
+            </span>
+            <input
+              name="delay_min_minutos"
+              type="number"
+              min={0}
+              step={1}
+              defaultValue={Math.round((automacao?.delay_min_seconds ?? 180) / 60)}
+              className="tnum mt-1 w-full rounded-lg border border-line bg-void px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+              Atraso máximo (minutos)
+            </span>
+            <input
+              name="delay_max_minutos"
+              type="number"
+              min={0}
+              step={1}
+              defaultValue={Math.round((automacao?.delay_max_seconds ?? 420) / 60)}
+              className="tnum mt-1 w-full rounded-lg border border-line bg-void px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+          </label>
+
+          <fieldset className="sm:col-span-2">
+            <legend className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+              O que pode ser automático
+            </legend>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+              {(
+                [
+                  ['reply_praise', 'Elogios e interesse', automacao?.reply_praise],
+                  ['reply_known_questions', 'Perguntas com resposta conhecida', automacao?.reply_known_questions],
+                  ['reply_mentions', 'Marcações de amigos', automacao?.reply_mentions],
+                ] as const
+              ).map(([nome, rotulo, ligado]) => (
+                <label key={nome} className="flex items-center gap-2 text-[0.8125rem]">
+                  <input
+                    type="checkbox"
+                    name={nome}
+                    defaultChecked={Boolean(ligado)}
+                    className="size-4 accent-[var(--color-accent)]"
+                  />
+                  {rotulo}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              className="rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold text-ink transition-transform hover:-translate-y-px"
+            >
+              Salvar cadência
+            </button>
+          </div>
+        </form>
+
+        <p className="mt-4 max-w-lg text-[0.75rem] leading-relaxed text-ink-faint">
+          Sempre fora do automático, independente de tudo acima: críticas, situações delicadas,
+          oportunidades comerciais, spam e qualquer pergunta cuja resposta não esteja na legenda ou
+          no cadastro — esses caem na fila de revisão para você.
+        </p>
       </section>
 
       <section className="mt-8">

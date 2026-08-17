@@ -35,15 +35,26 @@ export default async function VisaoGeral() {
           </h1>
           <p className="mt-1 text-sm text-ink-faint">Últimos 30 dias · @{conta?.username}</p>
         </div>
-        <Link
-          href="/comentarios"
-          className="group inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
-        >
-          {funil.elegiveis > 0
-            ? `${nf(funil.elegiveis)} pessoas esperando mensagem`
-            : 'Trabalhar comentários'}
-          <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {funil.precisaDeVoce > 0 ? (
+            <Link
+              href="/revisao"
+              className="group inline-flex items-center gap-2 rounded-full bg-warn px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
+            >
+              Precisa de você: {nf(funil.precisaDeVoce)}
+              <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          ) : null}
+          <Link
+            href="/comentarios"
+            className="group inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
+          >
+            {funil.elegiveis > 0
+              ? `${nf(funil.elegiveis)} comentários elegíveis`
+              : 'Trabalhar comentários'}
+            <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </div>
       </header>
 
       {/* Os dois números que definem o produto ganham o dobro de peso visual;

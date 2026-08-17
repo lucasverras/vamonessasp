@@ -123,7 +123,9 @@ export async function definirShadowMode(ligado: boolean, por?: string) {
 export async function getAutomacao() {
   const { data } = await db()
     .from('automation_settings')
-    .select('kill_switch,shadow_mode,dm_hourly_cap,dm_daily_cap,cooldown_days_per_user,require_approval')
+    .select(
+      'kill_switch,shadow_mode,dm_hourly_cap,dm_daily_cap,cooldown_days_per_user,require_approval,reply_mode,delay_min_seconds,delay_max_seconds,reply_praise,reply_known_questions,reply_mentions,automation_started_at',
+    )
     .eq('id', true)
     .single()
   return data

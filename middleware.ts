@@ -1,54 +1,57 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { COOKIE_SESSAO, lerSessao } from '@/lib/auth/sessao'
 
 /**
- * Portão de acesso mínimo.
+ * Portão do painel.
  *
- * O painel está num domínio público. Sem isto, qualquer pessoa que descobrisse a
- * URL poderia disparar sincronizações e consumir nosso rate limit da Meta.
+ * Substituiu o código compartilhado: agora cada pessoa tem usuário, senha e
+ * papel, e a sessão é um token assinado (HMAC) que o navegador não consegue
+ * forjar — escrever `papel: ADMIN` no cookie quebra a assinatura.
  *
- * É deliberadamente simples — um código compartilhado em cookie httpOnly — e
- * será substituído por Supabase Auth com magic link e allowlist de e-mails.
- * Não é autenticação de verdade: é uma tranca enquanto a porta não chega.
+ * Isto barra a NAVEGAÇÃO. Não é a garantia de autorização: server actions são
+ * endpoints HTTP e podem ser chamadas direto, então cada ação sensível confere
+ * o papel no servidor, em `lib/auth/guarda.ts`.
  *
- * Páginas legais e webhooks ficam FORA: as legais precisam ser públicas por
- * exigência da Meta e da LGPD, e o webhook é autenticado por assinatura HMAC.
+ * Ficam FORA: páginas legais (exigência da Meta e da LGPD), o webhook
+ * (autenticado por HMAC da Meta), os crons (autenticados por CRON_SECRET) e os
+ * arquivos de verificação de domínio.
  */
 
 const PUBLIC_PATHS = ['/privacy', '/terms', '/data-deletion', '/entrar', '/api/health']
 const PUBLIC_PREFIXES = ['/api/webhooks/', '/api/cron/', '/_next/', '/favicon']
 const VERIFICACAO_DE_DOMINIO = /^\/[A-Za-z0-9_-]+\.txt$/
 
-export function middleware(request: NextRequest) {
+/** Rotas que só ADMIN abre. A ação correspondente confere de novo no servidor. */
+const SOMENTE_ADMIN = ['/configuracoes']
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  if (pathname === '/') return NextResponse.next()
   if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next()
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next()
-
-  // Arquivos de verificação de domínio (TikTok, Google, Meta) vivem na raiz e são
-  // lidos por um robô sem cookie: atrás do portão, eles voltavam 401 e a
-  // verificação falhava sem dizer por quê. Só `.txt` na raiz, nada aninhado —
-  // é um artefato estático de confirmação, não dado nosso.
   if (VERIFICACAO_DE_DOMINIO.test(pathname)) return NextResponse.next()
 
-  // O callback do OAuth chega pela Meta, sem nosso cookie: é protegido pelo
-  // `state` assinado, verificado na própria rota.
+  // Callbacks de OAuth chegam do provedor, sem nosso cookie: são protegidos
+  // pelo `state` assinado, verificado em cada rota.
   if (pathname === '/api/auth/instagram/callback') return NextResponse.next()
+  if (pathname === '/api/auth/tiktok/callback') return NextResponse.next()
 
-  const expected = process.env.PANEL_ACCESS_CODE
-  if (!expected) {
-    return new NextResponse(
-      'PANEL_ACCESS_CODE não configurado no ambiente. O painel está bloqueado por segurança.',
-      { status: 503 },
-    )
+  const sessao = await lerSessao(request.cookies.get(COOKIE_SESSAO)?.value)
+
+  if (!sessao) {
+    const destino = new URL('/entrar', request.url)
+    const resposta = NextResponse.redirect(destino)
+    // Cookie inválido ou expirado é lixo: limpar evita o loop de redirecionar
+    // para o login que redireciona de volta.
+    resposta.cookies.delete(COOKIE_SESSAO)
+    return resposta
   }
 
-  if (request.cookies.get('painel')?.value === expected) return NextResponse.next()
+  if (sessao.papel !== 'ADMIN' && SOMENTE_ADMIN.some((p) => pathname.startsWith(p))) {
+    return NextResponse.redirect(new URL('/', request.url))
+  }
 
-  return new NextResponse(
-    'Acesso restrito. Abra /entrar?code=SEU_CODIGO uma vez para liberar este navegador.',
-    { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
-  )
+  return NextResponse.next()
 }
 
 export const config = {

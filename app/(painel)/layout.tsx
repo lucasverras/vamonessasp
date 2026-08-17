@@ -7,10 +7,13 @@ import {
   LayoutGrid,
   MessageSquare,
   Send,
+  LogOut,
   Settings,
   Sparkles,
   TrendingUp,
 } from 'lucide-react'
+import { sair } from '@/app/entrar/acoes'
+import { sessaoAtual } from '@/lib/auth/guarda'
 import { getConnectedAccount } from '@/lib/instagram/account'
 
 const NAV = [
@@ -25,7 +28,8 @@ const NAV = [
 ]
 
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
-  const conta = await getConnectedAccount()
+  const [conta, sessao] = await Promise.all([getConnectedAccount(), sessaoAtual()])
+  const admin = sessao?.papel === 'ADMIN'
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[236px_1fr]">
@@ -53,13 +57,38 @@ export default async function PainelLayout({ children }: { children: React.React
         </nav>
 
         <div className="hidden lg:block">
-          <Link
-            href="/configuracoes/instagram"
-            className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium text-ink-faint transition-colors hover:bg-surface hover:text-ink"
-          >
-            <Settings className="size-4 stroke-[1.75] transition-colors group-hover:text-accent" />
-            Configurações
-          </Link>
+          {/* Operador não vê o link porque o middleware o barraria — mostrar um
+              caminho que só leva a um redirecionamento é pior que não mostrar. */}
+          {admin ? (
+            <Link
+              href="/configuracoes/instagram"
+              className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+            >
+              <Settings className="size-4 stroke-[1.75] transition-colors group-hover:text-accent" />
+              Configurações
+            </Link>
+          ) : null}
+
+          {sessao ? (
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-line-soft bg-surface/60 px-2.5 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[0.75rem] font-medium">{sessao.usuario}</p>
+                <p className="truncate text-[0.6875rem] text-ink-faint">
+                  {admin ? 'Acesso total' : 'Operação'}
+                </p>
+              </div>
+              <form action={sair}>
+                <button
+                  type="submit"
+                  aria-label="Sair"
+                  title="Sair"
+                  className="grid size-7 place-items-center rounded-lg text-ink-faint transition-colors hover:bg-canvas hover:text-danger"
+                >
+                  <LogOut className="size-3.5 stroke-[1.75]" />
+                </button>
+              </form>
+            </div>
+          ) : null}
 
           {conta ? (
             <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-line-soft bg-surface/60 px-2.5 py-2.5">

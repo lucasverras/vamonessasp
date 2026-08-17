@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { exigirAdmin } from '@/lib/auth/guarda'
 import { criarCampanha, definirKillSwitch } from '@/lib/campaigns/create'
 
 /**
@@ -21,6 +22,14 @@ export interface RespostaEnvio {
 }
 
 export async function enviarSelecao(formData: FormData): Promise<RespostaEnvio> {
+  // Enfileirar mensagem real para pessoas reais é a ação mais consequente do
+  // sistema. Conferida aqui, não na tela.
+  try {
+    await exigirAdmin('enfileirar mensagens')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+
   const mensagem = String(formData.get('mensagem') ?? '')
   const nome = String(formData.get('nome') ?? '').trim() || 'Campanha sem nome'
   const ids = String(formData.get('ids') ?? '')
@@ -45,6 +54,7 @@ export async function enviarSelecao(formData: FormData): Promise<RespostaEnvio> 
 }
 
 export async function alternarKillSwitch(ligado: boolean) {
+  await exigirAdmin('mexer no kill switch')
   await definirKillSwitch(ligado)
   revalidatePath('/comentarios')
   revalidatePath('/configuracoes/instagram')

@@ -49,10 +49,19 @@ export async function getOverview(days = 30) {
   // Somatório das métricas de conteúdo no período: usa o snapshot MAIS RECENTE
   // de cada mídia, nunca a soma de todos os snapshots — que contaria o mesmo
   // conteúdo várias vezes.
-  const { data: totais, error: erroTotais } = await db().rpc('overview_media_totals', {
+  const { data: totaisRaw, error: erroTotais } = await db().rpc('overview_media_totals', {
     desde_param: desde,
   })
   if (erroTotais) throw new Error(`Falha ao agregar métricas: ${erroTotais.message}`)
+  // A função é `returns table`, então o PostgREST devolve ARRAY com uma linha.
+  // Ler `.views` direto no array devolvia undefined e a Home mostrava "—" para
+  // métricas que existiam: 2,4M de views apareciam como indisponíveis.
+  const totais = (Array.isArray(totaisRaw) ? totaisRaw[0] : totaisRaw) as {
+    views: number | null
+    reach: number | null
+    shares: number | null
+    comments: number | null
+  } | null
 
   const serie = (snapshots.data ?? []).filter((s) => s.captured_at >= desde)
   const primeiro = serie[0]?.followers_count ?? null
@@ -136,7 +145,7 @@ export async function getTopContent(limit = 8) {
 
 export async function getFunnelToday() {
   const hoje = new Date().toISOString().slice(0, 10)
-  const [comentarios, elegiveis, enviadas] = await Promise.all([
+  const [comentarios, elegiveis, enviadas, precisaDeVoce] = await Promise.all([
     db()
       .from('instagram_comments')
       .select('id', { count: 'exact', head: true })
@@ -151,10 +160,15 @@ export async function getFunnelToday() {
       .select('id', { count: 'exact', head: true })
       .eq('action_type', 'PRIVATE_REPLY')
       .eq('status', 'SENT'),
+    db()
+      .from('comment_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'PENDING_APPROVAL'),
   ])
   return {
     comentariosHoje: comentarios.count ?? 0,
     elegiveis: elegiveis.count ?? 0,
     enviadas: enviadas.count ?? 0,
+    precisaDeVoce: precisaDeVoce.count ?? 0,
   }
 }

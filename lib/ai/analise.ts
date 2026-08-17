@@ -2,6 +2,8 @@ import 'server-only'
 import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
+import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
+import { exemplosDeTom } from './respostas'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -134,6 +136,8 @@ interface ComentarioParaAnalise {
   text: string | null
   username: string | null
   instagram_user_id: string | null
+  media_id: string | null
+  commented_at: string | null
   instagram_media: { caption: string | null; media_product_type: string | null; published_at: string } | null
 }
 
@@ -162,7 +166,7 @@ export async function analisarPendentes(limite = 20) {
   const { data: comentarios, error } = await db()
     .from('instagram_comments')
     .select(
-      'id,text,username,instagram_user_id,instagram_media:media_id(caption,media_product_type,published_at)',
+      'id,text,username,instagram_user_id,media_id,commented_at,instagram_media:media_id(caption,media_product_type,published_at)',
     )
     .eq('analysis_status', 'PENDING')
     .eq('is_from_account', false)
@@ -201,6 +205,32 @@ export async function analisarPendentes(limite = 20) {
       .from('instagram_comments')
       .update({ analysis_status: 'ANALYZING' })
       .eq('id', c.id)
+
+    // Spam inequívoco não paga IA: classificação heurística, sem ação, direto
+    // para ANALYZED. Se a heurística errar, o painel mostra e a pessoa continua
+    // operável manualmente.
+    const filtro = preFiltro(c.text ?? '')
+    if (filtro) {
+      await db().from('comment_analyses').insert({
+        comment_id: c.id,
+        model: 'heuristica-v1',
+        prompt_id: promptId,
+        prompt_name: PROMPT_NOME,
+        prompt_version: PROMPT_VERSAO,
+        intent: filtro.intent,
+        intent_confidence: 1,
+        risk_level: 'LOW',
+        requires_human: false,
+        decision: 'SKIP',
+        decision_reason: `pré-filtro: ${filtro.motivo}`,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+      })
+      await db().from('instagram_comments').update({ analysis_status: 'ANALYZED' }).eq('id', c.id)
+      resultado.analisados += 1
+      return
+    }
 
     try {
       const contexto = await montarContexto(c)
@@ -292,6 +322,22 @@ async function montarContexto(c: ComentarioParaAnalise) {
     anteriores = (outros ?? []).map((o) => o.text as string)
   }
 
+  // O que JÁ respondemos neste conteúdo — a IA precisa ver para variar.
+  let nossasRespostas: string[] = []
+  if (c.media_id) {
+    const { data: enviadas } = await db()
+      .from('comment_actions')
+      .select('final_text,generated_text')
+      .eq('media_id', c.media_id)
+      .eq('action_type', 'PUBLIC_REPLY')
+      .in('status', ['SENT', 'QUEUED', 'SENDING'])
+      .order('created_at', { ascending: false })
+      .limit(5)
+    nossasRespostas = (enviadas ?? [])
+      .map((e) => (e.final_text ?? e.generated_text ?? '').trim())
+      .filter(Boolean)
+  }
+
   const entrada = {
     comentario: c.text ?? '',
     username: c.username,
@@ -300,9 +346,27 @@ async function montarContexto(c: ComentarioParaAnalise) {
     publicadoEm: c.instagram_media?.published_at ?? null,
     historicoPessoa: historico,
     comentariosAnterioresTexto: anteriores,
+    nossasRespostasNoConteudo: nossasRespostas,
+    // Sem intenção ainda (a IA decide); os exemplos cobrem o caso mais comum.
+    exemplosDeTom: exemplosDeTom('elogio', c.id),
   }
 
   return { prompt: montarPromptUsuario(entrada), entrada }
+}
+
+/**
+ * Pré-filtro heurístico: o que dá para decidir com regex não paga IA.
+ * Devolve a intenção detectada ou null (segue para o modelo).
+ */
+export function preFiltro(texto: string): { intent: string; motivo: string } | null {
+  const t = texto.trim()
+  // Só link, ou golpe clássico de "ganhe X": spam sem ambiguidade.
+  if (/^(https?:\/\/|www\.)\S+$/i.test(t)) return { intent: 'spam', motivo: 'apenas link' }
+  if (/ganhe\s+(r\$|\d)|renda extra|lucre .*acessando|invista e ganhe/i.test(t)) {
+    return { intent: 'spam', motivo: 'padrão de golpe' }
+  }
+  if (/^segue de volta\b|^sdv\b/i.test(t)) return { intent: 'spam', motivo: 'troca de follow' }
+  return null
 }
 
 async function gravarAnalise(args: {
@@ -358,26 +422,85 @@ async function gravarAnalise(args: {
 
   if (error) throw new Error(`Falha ao gravar análise: ${error.message}`)
 
-  // Ações em SHADOW: registradas, visíveis no painel, incapazes de sair.
-  // O worker recusa qualquer status que não seja QUEUED.
+  // O destino da ação é decidido pela configuração + análise: fila com atraso
+  // (auto), revisão humana, ou registro. Ver lib/automation/decidir.ts.
+  const cfg = await lerConfigAutomacao()
+  const destino = cfg
+    ? decidirDestino({
+        cfg,
+        intent: a.intencao,
+        confidence: a.confianca,
+        decision: decisao,
+        requiresHuman: forcaRevisao,
+        commentedAt: c.commented_at ?? new Date(0).toISOString(),
+      })
+    : ({ status: 'SHADOW', agendadoPara: null, motivo: 'sem configuracao' } as const)
+
   const acoes: Array<{ tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'; texto: string }> = []
   if (a.resposta_publica) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
   if (a.mensagem_privada) acoes.push({ tipo: 'PRIVATE_REPLY', texto: a.mensagem_privada })
 
   if (acoes.length > 0) {
-    await db()
+    const { error: erroAcoes } = await db()
       .from('comment_actions')
       .insert(
         acoes.map((x) => ({
           comment_id: c.id,
           analysis_id: analiseSalva.id,
           action_type: x.tipo,
-          mode: 'SHADOW' as const,
-          status: 'SHADOW' as const,
+          mode: destino.status === 'QUEUED' ? ('AUTO' as const) : ('SHADOW' as const),
+          status: destino.status,
           generated_text: x.texto,
-          skip_reason: 'SHADOW_MODE: gerado para revisão, nunca enviado',
+          reply_source: 'AI',
+          // As colunas da constraint USER+MEDIA: preenchidas SEMPRE, para o
+          // banco poder recusar a segunda DM do mesmo par.
+          instagram_user_id: c.instagram_user_id,
+          media_id: c.media_id ?? null,
+          next_attempt_at: destino.agendadoPara ?? new Date().toISOString(),
+          skip_reason: destino.status === 'QUEUED' ? null : destino.motivo,
         })),
       )
+    // 23505 aqui é a constraint funcionando: outro comentário da mesma pessoa
+    // no mesmo conteúdo já reservou a DM. Não é falha de análise.
+    if (erroAcoes && erroAcoes.code !== '23505') {
+      throw new Error(`Falha ao criar ações: ${erroAcoes.message}`)
+    }
+    if (erroAcoes?.code === '23505') {
+      // A pública pode ter passado e a privada colidido (ou vice-versa); grava
+      // uma a uma para não perder a que é legítima.
+      for (const x of acoes) {
+        const { error: e1 } = await db()
+          .from('comment_actions')
+          .insert({
+            comment_id: c.id,
+            analysis_id: analiseSalva.id,
+            action_type: x.tipo,
+            mode: destino.status === 'QUEUED' ? ('AUTO' as const) : ('SHADOW' as const),
+            status: destino.status,
+            generated_text: x.texto,
+            reply_source: 'AI',
+            instagram_user_id: c.instagram_user_id,
+            media_id: c.media_id ?? null,
+            next_attempt_at: destino.agendadoPara ?? new Date().toISOString(),
+            skip_reason: destino.status === 'QUEUED' ? null : destino.motivo,
+          })
+        if (e1 && e1.code !== '23505') throw new Error(`Falha ao criar ação: ${e1.message}`)
+        if (e1?.code === '23505' && x.tipo === 'PRIVATE_REPLY') {
+          await db()
+            .from('comment_actions')
+            .insert({
+              comment_id: c.id,
+              analysis_id: analiseSalva.id,
+              action_type: x.tipo,
+              mode: 'SHADOW' as const,
+              status: 'SKIPPED' as const,
+              generated_text: x.texto,
+              reply_source: 'AI',
+              skip_reason: 'SKIPPED_DUPLICATE_USER_MEDIA: pessoa já tem DM deste conteúdo',
+            })
+        }
+      }
+    }
   }
 
   await db()

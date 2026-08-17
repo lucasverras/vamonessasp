@@ -13,7 +13,8 @@ import 'server-only'
  */
 
 export const PROMPT_NOME = 'classificar-e-responder'
-export const PROMPT_VERSAO = 1
+// v2: seções de anti-repetição e exemplos de tom (17/08/2026).
+export const PROMPT_VERSAO = 2
 
 export const INTENCOES = [
   'localizacao',
@@ -135,6 +136,10 @@ export function montarPromptUsuario(entrada: {
     ultimaIntencao: string | null
   }
   comentariosAnterioresTexto: string[]
+  /** Nossas respostas públicas recentes NESTE conteúdo — para não repetir. */
+  nossasRespostasNoConteudo?: string[]
+  /** Exemplos de tom da biblioteca, já rotacionados por comentário. */
+  exemplosDeTom?: string[]
 }): string {
   const h = entrada.historicoPessoa
   const partes: string[] = []
@@ -164,6 +169,25 @@ ${
     : ''
 }
 </historico_da_pessoa>`)
+
+  // Anti-repetição: um Reel com cinco "Que bom que gostou!" seguidos entrega o
+  // bot. A IA vê o que já dissemos ali e é instruída a variar.
+  if (entrada.nossasRespostasNoConteudo?.length) {
+    partes.push(`<nossas_respostas_recentes_neste_conteudo>
+${entrada.nossasRespostasNoConteudo
+  .slice(0, 5)
+  .map((t) => `- ${t.slice(0, 120)}`)
+  .join('\n')}
+NÃO repita nenhuma destas literalmente; varie a construção.
+</nossas_respostas_recentes_neste_conteudo>`)
+  }
+
+  if (entrada.exemplosDeTom?.length) {
+    partes.push(`<exemplos_de_tom>
+${entrada.exemplosDeTom.map((t) => `- ${t}`).join('\n')}
+São exemplos de TOM, não de conteúdo: adapte ao comentário real, nunca cole.
+</exemplos_de_tom>`)
+  }
 
   return partes.join('\n\n')
 }

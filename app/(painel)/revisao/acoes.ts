@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { exigirAdmin, exigirSessao } from '@/lib/auth/guarda'
 import { db } from '@/lib/db'
 import { revalidar } from '@/lib/campaigns/eligibility'
 
@@ -24,6 +25,15 @@ export interface Resultado {
 }
 
 export async function aprovar(acaoId: string, textoFinal: string): Promise<Resultado> {
+  // Aprovar coloca mensagem real na fila de envio: qualquer papel logado pode
+  // revisar, mas fica REGISTRADO quem foi — auditoria exige nome, não "operador".
+  let sessao
+  try {
+    sessao = await exigirSessao()
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sessão expirada.' }
+  }
+
   const texto = textoFinal.trim()
   if (texto.length < 3) return { ok: false, erro: 'Texto vazio.' }
 
@@ -61,9 +71,12 @@ export async function aprovar(acaoId: string, textoFinal: string): Promise<Resul
       status: 'QUEUED',
       mode: 'MANUAL',
       final_text: texto,
-      edited_by: texto === acao.generated_text ? null : 'operador',
-      approved_by: 'operador',
+      edited_by: texto === acao.generated_text ? null : sessao.usuario,
+      approved_by: sessao.usuario,
       approved_at: new Date().toISOString(),
+      // Editou = a resposta é humana; aprovou sem tocar = continua da IA.
+      reply_source: texto === acao.generated_text ? 'AI' : 'HUMAN',
+      responded_by: sessao.usuario,
       skip_reason: null,
       next_attempt_at: new Date().toISOString(),
     })
@@ -77,11 +90,18 @@ export async function aprovar(acaoId: string, textoFinal: string): Promise<Resul
 }
 
 export async function rejeitar(acaoId: string, motivo: string): Promise<Resultado> {
+  let sessao
+  try {
+    sessao = await exigirSessao()
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sessão expirada.' }
+  }
+
   const { error } = await db()
     .from('comment_actions')
     .update({
       status: 'REJECTED',
-      rejected_by: 'operador',
+      rejected_by: sessao.usuario,
       rejected_reason: motivo.trim() || 'sem motivo informado',
     })
     .eq('id', acaoId)
@@ -114,7 +134,7 @@ export async function bloquearPessoa(acaoId: string, motivo: string): Promise<Re
       is_blacklisted: true,
       blacklist_reason: motivo.trim() || 'bloqueado na revisão',
       blacklisted_at: new Date().toISOString(),
-      blacklisted_by: 'operador',
+      blacklisted_by: (await exigirSessao()).usuario,
     })
     .eq('instagram_user_id', c.instagram_user_id)
 
@@ -151,6 +171,13 @@ export async function alternarIntencaoAutomatica(
   intencao: string,
   ligar: boolean,
 ): Promise<Resultado> {
+  // Liberar uma intenção decide o que sai sem passar por ninguém. É de ADMIN.
+  try {
+    await exigirAdmin('liberar automação por intenção')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+
   const { data: cfg } = await db()
     .from('automation_settings')
     .select('auto_approve_intents,never_auto_intents')

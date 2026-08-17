@@ -70,6 +70,12 @@ export default async function Revisao() {
     .eq('analysis_status', 'PENDING')
     .eq('is_from_account', false)
 
+  // A fila "precisa de você": ações que a automação decidiu NÃO tomar sozinha.
+  const { count: precisaDeVoce } = await db()
+    .from('comment_actions')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'PENDING_APPROVAL')
+
   // Cada análise guarda o modelo que a produziu, então o custo é correto mesmo
   // depois de trocar de modelo no meio do caminho.
   const custo = (analises ?? []).reduce(
@@ -106,6 +112,27 @@ export default async function Revisao() {
           </div>
         </dl>
       </header>
+
+      {(precisaDeVoce ?? 0) > 0 ? (
+        <div
+          className="rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/40 bg-warn-wash/50 px-5 py-4"
+          style={{ animationDelay: '40ms' }}
+        >
+          <div>
+            <p className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">
+              Precisa de você
+            </p>
+            <p className="mt-0.5 text-[0.8125rem] text-ink-soft">
+              {precisaDeVoce} {precisaDeVoce === 1 ? 'resposta aguarda' : 'respostas aguardam'} sua
+              decisão — a automação parou de propósito: crítica, falta de informação ou baixa
+              confiança.
+            </p>
+          </div>
+          <span className="tnum grid size-10 shrink-0 place-items-center rounded-full bg-warn text-[1rem] font-bold text-void">
+            {precisaDeVoce}
+          </span>
+        </div>
+      ) : null}
 
       {cfg?.shadow_mode ? (
         <p

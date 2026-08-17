@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- script de evidência
+   one-shot: explora respostas de formato desconhecido de propósito. */
 /**
  * Parte 2: objeto de POST (não de vídeo), volume real e viabilidade do
  * matching Instagram ↔ Facebook com os dados que temos.

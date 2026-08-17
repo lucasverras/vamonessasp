@@ -24,7 +24,7 @@ export type MotivoInelegivel =
   | 'COMENTARIO_PROPRIO'
   | 'COMENTARIO_APAGADO'
   | 'PESSOA_NA_BLACKLIST'
-  | 'COOLDOWN_DA_PESSOA'
+  | 'JA_RECEBEU_DESTE_CONTEUDO'
   | 'JA_NA_FILA'
 
 export function expiraEm(comentadoEm: Date | string): Date {
@@ -74,16 +74,10 @@ export async function revalidar(
    */
   ignorarAcaoId?: string,
 ): Promise<Veredito> {
-  const { data: cfg } = await db()
-    .from('automation_settings')
-    .select('cooldown_days_per_user')
-    .eq('id', true)
-    .single()
-
   const { data: c } = await db()
     .from('instagram_comments')
     .select(
-      'id,instagram_comment_id,instagram_user_id,is_from_account,commented_at,eligibility_expires_at,deleted_at,eligibility_status',
+      'id,instagram_comment_id,instagram_user_id,media_id,is_from_account,commented_at,eligibility_expires_at,deleted_at,eligibility_status',
     )
     .eq('id', commentId)
     .maybeSingle()
@@ -96,23 +90,28 @@ export async function revalidar(
     return { pode: false, motivo: 'FORA_DA_JANELA' }
   }
 
-  // Uma resposta por comentário, para sempre. Além da constraint no banco,
-  // checamos aqui para poder registrar o motivo em vez de estourar erro.
-  const { count: jaEnviado } = await db()
+  // A REGRA DO PRODUTO: uma private reply por PESSOA+CONTEÚDO. A mesma pessoa
+  // em dois Reels diferentes recebe duas — de propósito. O mesmo Reel, nunca
+  // duas. A garantia final é a unique parcial no banco; esta checagem existe
+  // para registrar o motivo em vez de estourar 23505.
+  const { count: jaEnviadoDoPar } = await db()
     .from('comment_actions')
     .select('id', { count: 'exact', head: true })
-    .eq('comment_id', c.id)
+    .eq('instagram_user_id', c.instagram_user_id)
+    .eq('media_id', c.media_id)
     .eq('action_type', 'PRIVATE_REPLY')
     .eq('status', 'SENT')
-  if ((jaEnviado ?? 0) > 0) return { pode: false, motivo: 'JA_RESPONDIDO' }
+  if ((jaEnviadoDoPar ?? 0) > 0) {
+    return { pode: false, motivo: 'JA_RECEBEU_DESTE_CONTEUDO' }
+  }
 
-  // Já existe ação PENDENTE para este comentário. Sem esta checagem, duas
-  // campanhas podem enfileirar a mesma pessoa: a constraint impediria o segundo
-  // SENT, mas só na hora do envio, virando erro em vez de decisão consciente.
+  // Reserva pendente para o mesmo PAR (não o mesmo comentário): outro
+  // comentário da pessoa no mesmo Reel pode já ter reservado a DM.
   let filaQuery = db()
     .from('comment_actions')
     .select('id', { count: 'exact', head: true })
-    .eq('comment_id', c.id)
+    .eq('instagram_user_id', c.instagram_user_id)
+    .eq('media_id', c.media_id)
     .eq('action_type', 'PRIVATE_REPLY')
     .in('status', ['QUEUED', 'SENDING', 'PENDING_APPROVAL', 'APPROVED'])
   if (ignorarAcaoId) filaQuery = filaQuery.neq('id', ignorarAcaoId)
@@ -121,25 +120,16 @@ export async function revalidar(
 
   const { data: pessoa } = await db()
     .from('instagram_users')
-    .select('is_blacklisted,last_private_reply_at')
+    .select('is_blacklisted')
     .eq('instagram_user_id', c.instagram_user_id)
     .maybeSingle()
 
   if (pessoa?.is_blacklisted) return { pode: false, motivo: 'PESSOA_NA_BLACKLIST' }
 
-  // Cooldown por pessoa: decisão nossa, mais restritiva que a Meta exige.
-  // Evita que alguém que comenta em todo Reel receba mensagem toda semana.
-  const cooldownDias = cfg?.cooldown_days_per_user ?? 90
-  if (pessoa?.last_private_reply_at && cooldownDias > 0) {
-    const desde = Date.now() - new Date(pessoa.last_private_reply_at).getTime()
-    if (desde < cooldownDias * 86_400_000) {
-      return {
-        pode: false,
-        motivo: 'COOLDOWN_DA_PESSOA',
-        detalhe: `última mensagem há ${Math.floor(desde / 86_400_000)} dias`,
-      }
-    }
-  }
+  // O cooldown global por pessoa FOI REMOVIDO deliberadamente (decisão de
+  // produto, 17/08/2026): bloquear "qualquer DM por N dias" impedia o caso
+  // legítimo de dois conteúdos diferentes. last_private_reply_at continua
+  // gravado como informação, mas não bloqueia mais nada.
 
   return { pode: true, motivo: null }
 }

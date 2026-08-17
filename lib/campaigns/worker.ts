@@ -5,7 +5,9 @@ import { getConnectedAccount, getPageToken } from '../instagram/account'
 import { MetaError, describeFailure } from '../instagram/errors'
 import { getLastUsage } from '../instagram/meta-client'
 import { enviarRespostaPrivada } from '../instagram/private-replies'
-import { revalidar } from './eligibility'
+import { enviarRespostaPublica } from '../instagram/public-replies'
+import { validarRespostaPublica } from '../ai/respostas'
+import { revalidar, type Veredito } from './eligibility'
 
 /**
  * Worker de envio.
@@ -41,7 +43,7 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
 
   const { data: cfg } = await db()
     .from('automation_settings')
-    .select('kill_switch,shadow_mode')
+    .select('kill_switch,shadow_mode,reply_mode')
     .eq('id', true)
     .single()
 
@@ -69,6 +71,8 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
   const itens = (reservados ?? []) as Array<{
     id: string
     comment_id: string
+    action_type: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'
+    media_id: string | null
     final_text: string | null
     generated_text: string | null
     attempts: number
@@ -80,11 +84,15 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
   const r: ResultadoLote = { ...vazio, processados: itens.length, orcamentoRestante: orcamento }
 
   for (const item of itens) {
-    // 4. Revalidação no instante do envio. Entre a seleção e agora, o
-    //    comentário pode ter expirado, sido apagado, já ter recebido resposta,
-    //    ou a pessoa pode ter entrado na blacklist.
-    // Passa o próprio id: sem isso o worker se vê na fila e ignora tudo.
-    const veredito = await revalidar(item.comment_id, item.id)
+    // 4. Revalidação no instante do envio, POR TIPO. A private reply carrega a
+    //    janela de 7 dias e a regra pessoa+conteúdo; a resposta pública só
+    //    exige que o comentário ainda exista e não seja nosso — regras
+    //    diferentes, funil diferente.
+    const veredito =
+      item.action_type === 'PUBLIC_REPLY'
+        ? await revalidarPublica(item.comment_id)
+        : // Passa o próprio id: sem isso o worker se vê na fila e ignora tudo.
+          await revalidar(item.comment_id, item.id)
     if (!veredito.pode) {
       r.ignorados += 1
       await db()
@@ -119,6 +127,24 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
       continue
     }
 
+    // DRY_RUN: percorreu classificação, decisão, fila, atraso e revalidação —
+    // e para AQUI, na beira do envio. É o modo de validar o pipeline inteiro
+    // sem tocar em pessoa real, e é o default de produção até você ligar LIVE.
+    if (cfg?.reply_mode === 'DRY_RUN') {
+      r.ignorados += 1
+      await db()
+        .from('comment_actions')
+        .update({
+          status: 'DRY_RUN',
+          skip_reason: 'MODO_DRY_RUN: teria enviado agora',
+          final_text: texto,
+          locked_until: null,
+          locked_by: null,
+        })
+        .eq('id', item.id)
+      continue
+    }
+
     const { data: comentario } = await db()
       .from('instagram_comments')
       .select('instagram_comment_id,instagram_user_id')
@@ -126,7 +152,50 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
       .single()
 
     try {
-      // 5. Envio.
+      // 5. Envio, por tipo.
+      if (item.action_type === 'PUBLIC_REPLY') {
+        // Última validação estrutural antes de publicar: comprimento, menção a
+        // IA, tom de SAC, repetição literal no mesmo conteúdo.
+        const recentes = item.media_id ? await respostasRecentesNoMedia(item.media_id) : []
+        const recusa = validarRespostaPublica(texto, recentes)
+        if (recusa) {
+          r.ignorados += 1
+          await db()
+            .from('comment_actions')
+            .update({
+              status: 'PENDING_APPROVAL',
+              skip_reason: `validação final recusou: ${recusa}`,
+              locked_until: null,
+              locked_by: null,
+            })
+            .eq('id', item.id)
+          continue
+        }
+
+        const resposta = await enviarRespostaPublica({
+          pageToken: token,
+          commentId: comentario!.instagram_comment_id,
+          texto,
+        })
+
+        r.enviados += 1
+        await db()
+          .from('comment_actions')
+          .update({
+            status: 'SENT',
+            sent_at: new Date().toISOString(),
+            external_id: resposta.id,
+            final_text: texto,
+            error_code: null,
+            error_message: null,
+            error_class: null,
+            locked_until: null,
+            locked_by: null,
+          })
+          .eq('id', item.id)
+        continue
+      }
+
       const resposta = await enviarRespostaPrivada({
         pageId: conta.facebookPageId,
         pageToken: token,
@@ -243,6 +312,37 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
 
 async function atualizarContadoresDeCampanhas() {
   await db().rpc('atualizar_contadores_campanhas')
+}
+
+/**
+ * Revalidação da resposta PÚBLICA: regras próprias, não as da DM.
+ * Só exige que o comentário exista, não tenha sido apagado e não seja nosso.
+ * A dedupe (uma pública por comentário) é a unique parcial — esta linha,
+ * já em SENDING, é por construção a única em voo para o comentário.
+ */
+async function revalidarPublica(commentId: string): Promise<Veredito> {
+  const { data: c } = await db()
+    .from('instagram_comments')
+    .select('id,is_from_account,deleted_at')
+    .eq('id', commentId)
+    .maybeSingle()
+  if (!c) return { pode: false, motivo: 'COMENTARIO_APAGADO', detalhe: 'não está no banco' }
+  if (c.deleted_at) return { pode: false, motivo: 'COMENTARIO_APAGADO' }
+  if (c.is_from_account) return { pode: false, motivo: 'COMENTARIO_PROPRIO' }
+  return { pode: true, motivo: null }
+}
+
+/** Últimas respostas públicas enviadas no conteúdo, para a validação final. */
+async function respostasRecentesNoMedia(mediaId: string): Promise<string[]> {
+  const { data } = await db()
+    .from('comment_actions')
+    .select('final_text,generated_text')
+    .eq('media_id', mediaId)
+    .eq('action_type', 'PUBLIC_REPLY')
+    .eq('status', 'SENT')
+    .order('sent_at', { ascending: false })
+    .limit(5)
+  return (data ?? []).map((d) => (d.final_text ?? d.generated_text ?? '').trim()).filter(Boolean)
 }
 
 export async function destravarPresos(): Promise<number> {

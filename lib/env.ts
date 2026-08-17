@@ -82,6 +82,23 @@ export const env = {
     return required('SUPABASE_SERVICE_ROLE_KEY')
   },
 
+  // TikTok (Login Kit + Display API)
+  get tiktokClientKey() {
+    return required('TIKTOK_CLIENT_KEY')
+  },
+  get tiktokClientSecret() {
+    return required('TIKTOK_CLIENT_SECRET')
+  },
+  /**
+   * A MESMA string em três lugares: URL de autorização, callback e troca do
+   * code por token. O TikTok exige a igualdade caractere a caractere na troca;
+   * qualquer divergência falha só em produção, tarde. Por isso existe UM getter
+   * e nenhuma rota monta a URI por conta própria.
+   */
+  get tiktokRedirectUri() {
+    return process.env.TIKTOK_REDIRECT_URI ?? `${env.appUrl}/api/auth/tiktok/callback`
+  },
+
   // Infra
   get cronSecret() {
     return required('CRON_SECRET')
