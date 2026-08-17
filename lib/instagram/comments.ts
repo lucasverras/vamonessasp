@@ -204,13 +204,54 @@ export async function syncComentarios() {
   }
 }
 
-/** Inscreve o app nos webhooks da Página. É uma ESCRITA de configuração. */
-export async function assinarWebhooks(campos = ['comments', 'messages']) {
+/**
+ * Ativa os webhooks. ESCRITA de configuração — muda estado na Meta.
+ *
+ * São DUAS assinaturas em lugares diferentes, e confundi-las custou uma
+ * tentativa: `/{page-id}/subscribed_apps` só aceita campos de PÁGINA, e a Meta
+ * responde listando os válidos — `comments` não está entre eles.
+ *
+ *   1. Nível do APP, objeto `instagram`: entrega comments e mentions.
+ *      POST /{app-id}/subscriptions com app access token.
+ *   2. Nível da PÁGINA: habilita a entrega para esta Página específica.
+ *      POST /{page-id}/subscribed_apps com o Page Token.
+ *
+ * Sem a primeira, a Meta não sabe para onde mandar. Sem a segunda, sabe mas não
+ * envia desta conta.
+ */
+export async function assinarWebhooks() {
   const conta = await getConnectedAccount()
   if (!conta?.facebookPageId) throw new Error('Página do Facebook não vinculada.')
-  const token = await getPageToken(conta.id)
+
   const { metaPost } = await import('./meta-client')
-  return metaPost<{ success: boolean }>(`${conta.facebookPageId}/subscribed_apps`, token, {
-    subscribed_fields: campos.join(','),
-  })
+  const { env, callbacks } = await import('../env')
+
+  const resultados: Record<string, unknown> = {}
+
+  // 1. Objeto `instagram` no nível do app.
+  const appToken = `${env.metaAppId}|${env.metaAppSecret}`
+  try {
+    resultados.appInstagram = await metaPost(`${env.metaAppId}/subscriptions`, appToken, {
+      object: 'instagram',
+      callback_url: callbacks.webhook,
+      fields: 'comments',
+      verify_token: env.webhookVerifyToken,
+      include_values: 'true',
+    })
+  } catch (e) {
+    resultados.appInstagram = { erro: e instanceof Error ? e.message : String(e) }
+  }
+
+  // 2. Entrega para esta Página. `messages` é campo de Página válido e serve à
+  //    fase de respostas recebidas; `comments` deliberadamente NÃO vai aqui.
+  try {
+    const pageToken = await getPageToken(conta.id)
+    resultados.pagina = await metaPost(`${conta.facebookPageId}/subscribed_apps`, pageToken, {
+      subscribed_fields: 'messages',
+    })
+  } catch (e) {
+    resultados.pagina = { erro: e instanceof Error ? e.message : String(e) }
+  }
+
+  return resultados
 }
