@@ -10,3 +10,6 @@ npm-debug.log*
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# bloco de variáveis para colar na Vercel — contém segredos
+vercel-env.txt
