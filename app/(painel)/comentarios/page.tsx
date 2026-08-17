@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ComentariosTabela } from '@/components/comentarios-tabela'
+import { getAutomacao } from '@/lib/campaigns/create'
 import {
   contarPorStatus,
   listarComentarios,
@@ -26,10 +27,11 @@ export default async function Comentarios({
   const { f } = await searchParams
   const filtro = (ABAS.find((a) => a.chave === f)?.chave ?? 'elegiveis') as Filtro
 
-  const [linhas, contagens, oportunidade] = await Promise.all([
+  const [linhas, contagens, oportunidade, automacao] = await Promise.all([
     listarComentarios(filtro),
     contarPorStatus(),
     resumoOportunidade(),
+    getAutomacao(),
   ])
 
   return (
@@ -98,7 +100,7 @@ export default async function Comentarios({
       </nav>
 
       <div className="rise mt-6" style={{ animationDelay: '160ms' }}>
-        <ComentariosTabela linhas={linhas} />
+        <ComentariosTabela linhas={linhas} killSwitch={automacao?.kill_switch ?? true} />
       </div>
     </main>
   )

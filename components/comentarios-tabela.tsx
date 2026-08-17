@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Ban, Check, Clock, Send, X } from 'lucide-react'
+import { Ban, Check, Clock, Lock, Send, X } from 'lucide-react'
+import { ModalEnvio } from './modal-envio'
 import type { ComentarioLinha } from '@/lib/analytics/comentarios'
 
 const ESTADO = {
@@ -12,8 +13,15 @@ const ESTADO = {
   NOT_ELIGIBLE: { texto: 'Inelegível', classe: 'text-ink-faint bg-surface', Icone: Ban },
 } as const
 
-export function ComentariosTabela({ linhas }: { linhas: ComentarioLinha[] }) {
+export function ComentariosTabela({
+  linhas,
+  killSwitch,
+}: {
+  linhas: ComentarioLinha[]
+  killSwitch: boolean
+}) {
   const [marcados, setMarcados] = useState<Set<string>>(new Set())
+  const [modalAberto, setModalAberto] = useState(false)
 
   // Uma pessoa recebe UMA mensagem, mesmo tendo comentado várias vezes — então
   // a contagem que importa é de pessoas, não de linhas selecionadas.
@@ -33,6 +41,21 @@ export function ComentariosTabela({ linhas }: { linhas: ComentarioLinha[] }) {
 
   return (
     <>
+      {modalAberto ? (
+        <ModalEnvio
+          ids={[...marcados]}
+          killSwitch={killSwitch}
+          aoFechar={(enviou) => {
+            setModalAberto(false)
+            if (enviou) {
+              setMarcados(new Set())
+              // Recarrega para refletir os novos estados vindos do servidor.
+              window.location.reload()
+            }
+          }}
+        />
+      ) : null}
+
       {selecionaveis.length > 0 ? (
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <button
@@ -50,16 +73,18 @@ export function ComentariosTabela({ linhas }: { linhas: ComentarioLinha[] }) {
                 <strong className="font-semibold text-ink">{marcados.size}</strong> selecionados
               </span>
               <button
-                disabled
-                title="O envio entra na Etapa 3, com fila, revalidação e kill switch."
-                className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg bg-surface px-3.5 py-1.5 text-[0.8125rem] font-semibold text-ink-faint"
+                onClick={() => setModalAberto(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3.5 py-1.5 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
               >
                 <Send className="size-3.5" />
                 Enviar mensagem
               </button>
-              <span className="text-[0.75rem] text-ink-faint">
-                envio disponível na Etapa 3
-              </span>
+              {killSwitch ? (
+                <span className="inline-flex items-center gap-1.5 text-[0.75rem] text-warn">
+                  <Lock className="size-3.5" />
+                  kill switch ligado — a fila é montada, nada sai
+                </span>
+              ) : null}
             </>
           ) : null}
         </div>

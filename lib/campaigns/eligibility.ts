@@ -25,7 +25,7 @@ export type MotivoInelegivel =
   | 'COMENTARIO_APAGADO'
   | 'PESSOA_NA_BLACKLIST'
   | 'COOLDOWN_DA_PESSOA'
-  | 'KILL_SWITCH_ATIVO'
+  | 'JA_NA_FILA'
 
 export function expiraEm(comentadoEm: Date | string): Date {
   const base = typeof comentadoEm === 'string' ? new Date(comentadoEm) : comentadoEm
@@ -53,17 +53,21 @@ export interface Veredito {
 }
 
 /**
- * Revalidação COMPLETA, imediatamente antes de enviar. Backend é autoridade:
- * nunca confiar no estado que a tela enviou.
+ * Revalidação COMPLETA de UM comentário. Backend é autoridade: nunca confiar no
+ * estado que a tela enviou.
+ *
+ * Responde apenas "este comentário pode receber mensagem?". Deliberadamente NÃO
+ * consulta o kill switch: essa é a pergunta "o sistema deve estar enviando
+ * agora?", que pertence ao worker. Misturar as duas fazia o kill switch impedir
+ * até MONTAR a fila — o oposto do que a interface promete, que é preparar tudo e
+ * liberar depois.
  */
 export async function revalidar(commentId: string): Promise<Veredito> {
   const { data: cfg } = await db()
     .from('automation_settings')
-    .select('kill_switch,cooldown_days_per_user')
+    .select('cooldown_days_per_user')
     .eq('id', true)
     .single()
-
-  if (cfg?.kill_switch) return { pode: false, motivo: 'KILL_SWITCH_ATIVO' }
 
   const { data: c } = await db()
     .from('instagram_comments')
@@ -90,6 +94,17 @@ export async function revalidar(commentId: string): Promise<Veredito> {
     .eq('action_type', 'PRIVATE_REPLY')
     .eq('status', 'SENT')
   if ((jaEnviado ?? 0) > 0) return { pode: false, motivo: 'JA_RESPONDIDO' }
+
+  // Já existe ação PENDENTE para este comentário. Sem esta checagem, duas
+  // campanhas podem enfileirar a mesma pessoa: a constraint impediria o segundo
+  // SENT, mas só na hora do envio, virando erro em vez de decisão consciente.
+  const { count: jaNaFila } = await db()
+    .from('comment_actions')
+    .select('id', { count: 'exact', head: true })
+    .eq('comment_id', c.id)
+    .eq('action_type', 'PRIVATE_REPLY')
+    .in('status', ['QUEUED', 'SENDING', 'PENDING_APPROVAL', 'APPROVED'])
+  if ((jaNaFila ?? 0) > 0) return { pode: false, motivo: 'JA_NA_FILA' }
 
   const { data: pessoa } = await db()
     .from('instagram_users')

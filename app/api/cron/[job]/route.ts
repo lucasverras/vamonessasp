@@ -6,6 +6,7 @@ import { backfillDailyInsights } from '@/lib/instagram/backfill'
 import { syncComentarios } from '@/lib/instagram/comments'
 import { syncMedia, syncMediaInsights } from '@/lib/instagram/media'
 import { expirarVencidos } from '@/lib/campaigns/eligibility'
+import { destravarPresos, processarLote } from '@/lib/campaigns/worker'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -50,6 +51,16 @@ const JOBS = {
 
   /** Marca como EXPIRED quem passou da janela de 7 dias. */
   'expirar-elegibilidade': async () => ({ expirados: await expirarVencidos() }),
+
+  /**
+   * Worker de envio. Roda a cada minuto e processa até 10 por vez: com teto de
+   * 600/h, 10/min mantém o ritmo abaixo do limite oficial de 750/h com folga.
+   * Não faz nada enquanto o kill switch estiver ligado.
+   */
+  'dm-worker': () => processarLote(10),
+
+  /** Devolve à fila o que ficou preso em SENDING por worker morto. */
+  'destravar-fila': async () => ({ destravados: await destravarPresos() }),
 } as const
 
 type JobName = keyof typeof JOBS

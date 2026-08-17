@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagram/account'
+import { getAutomacao } from '@/lib/campaigns/create'
+import { alternarKillSwitch } from '../../comentarios/acoes'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Instagram' }
@@ -34,6 +36,7 @@ export default async function InstagramSettingsPage({
   const params = await searchParams
   const account = await getConnectedAccount()
   const runs = await getLastSyncRuns()
+  const automacao = await getAutomacao()
 
   async function sincronizar() {
     'use server'
@@ -150,6 +153,55 @@ export default async function InstagramSettingsPage({
             </form>
           ) : null}
         </div>
+      </section>
+
+      {/* Freio de mão. Fica antes do histórico porque é a decisão mais
+          consequente desta tela: enquanto ligado, o sistema é incapaz de
+          mandar mensagem para qualquer pessoa. */}
+      <section className="mt-6 rounded-card border border-line bg-canvas p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">
+              Envio de mensagens
+            </h2>
+            <p className="mt-1 max-w-md text-[0.8125rem] leading-relaxed text-ink-faint">
+              {automacao?.kill_switch
+                ? 'Travado. Campanhas podem ser criadas e a fila é montada, mas nenhuma mensagem sai.'
+                : 'Liberado. O worker processa a fila a cada minuto, respeitando o teto por hora.'}
+            </p>
+          </div>
+          <form
+            action={async () => {
+              'use server'
+              await alternarKillSwitch(!automacao?.kill_switch)
+            }}
+          >
+            <button
+              type="submit"
+              className={`rounded-lg px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px ${
+                automacao?.kill_switch
+                  ? 'bg-accent text-void'
+                  : 'border border-danger/50 bg-danger-wash text-danger'
+              }`}
+            >
+              {automacao?.kill_switch ? 'Liberar envio' : 'Travar envio agora'}
+            </button>
+          </form>
+        </div>
+
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+          {[
+            ['Estado', automacao?.kill_switch ? 'Travado' : 'Liberado'],
+            ['Teto por hora', String(automacao?.dm_hourly_cap ?? '—')],
+            ['Teto por dia', String(automacao?.dm_daily_cap ?? '—')],
+            ['Cooldown', `${automacao?.cooldown_days_per_user ?? '—'} dias`],
+          ].map(([k, v]) => (
+            <div key={k}>
+              <dt className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">{k}</dt>
+              <dd className="tnum mt-0.5 font-display text-base font-semibold">{v}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <section className="mt-8">
