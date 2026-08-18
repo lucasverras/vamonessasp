@@ -82,8 +82,8 @@ export async function consultarFollowStatus(igsid: string): Promise<FollowStatus
   return status
 }
 
-/** Janela conservadora anti-spam do fluxo de DM sugerida por IA (§46). */
-export const JANELA_DM_RECENTE_DIAS = 30
+/** Fallback se a config não carregar. O valor real vem do painel (60 dias). */
+export const JANELA_DM_RECENTE_DIAS = 60
 
 export type GateDm =
   | { pode: true; followStatus: FollowStatus }
@@ -112,15 +112,19 @@ export async function gateDmParaIgsid(igsid: string | null): Promise<GateDm> {
     return { pode: false, motivo: 'FOLLOW_STATUS_UNKNOWN', followStatus }
   }
 
-  const { data: pessoa } = await db()
-    .from('instagram_users')
-    .select('last_private_reply_at')
-    .eq('instagram_user_id', igsid)
-    .maybeSingle()
+  const [{ data: pessoa }, { data: cfg }] = await Promise.all([
+    db()
+      .from('instagram_users')
+      .select('last_private_reply_at')
+      .eq('instagram_user_id', igsid)
+      .maybeSingle(),
+    db().from('automation_settings').select('cooldown_days_per_user').eq('id', true).single(),
+  ])
+  const janelaDias = cfg?.cooldown_days_per_user ?? JANELA_DM_RECENTE_DIAS
   if (
     pessoa?.last_private_reply_at &&
-    Date.now() - new Date(pessoa.last_private_reply_at).getTime() <
-      JANELA_DM_RECENTE_DIAS * 86_400_000
+    janelaDias > 0 &&
+    Date.now() - new Date(pessoa.last_private_reply_at).getTime() < janelaDias * 86_400_000
   ) {
     return { pode: false, motivo: 'SKIPPED_RECENT_DM', followStatus }
   }

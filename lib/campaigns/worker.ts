@@ -2,7 +2,7 @@ import 'server-only'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
 import { getConnectedAccount, getPageToken } from '../instagram/account'
-import { MetaError, describeFailure } from '../instagram/errors'
+import { MetaError, describeFailure, ehErroDePolitica } from '../instagram/errors'
 import { getLastUsage } from '../instagram/meta-client'
 import { enviarRespostaPrivada } from '../instagram/private-replies'
 import { enviarRespostaPublica } from '../instagram/public-replies'
@@ -34,7 +34,7 @@ export interface ResultadoLote {
   enviados: number
   falhas: number
   ignorados: number
-  parouPor?: 'KILL_SWITCH' | 'ORCAMENTO' | 'RATE_LIMIT' | 'TOKEN' | 'SEM_TRABALHO'
+  parouPor?: 'KILL_SWITCH' | 'ORCAMENTO' | 'RATE_LIMIT' | 'TOKEN' | 'SEM_TRABALHO' | 'ERRO_DE_POLITICA'
   orcamentoRestante?: number
 }
 
@@ -278,6 +278,21 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
       const meta = erro instanceof MetaError ? erro : null
       const classe = meta?.errorClass ?? 'TEMPORARY'
       const permanente = classe === 'PERMANENT'
+
+      // Erro de POLÍTICA da Meta: freio automático — trava o kill switch e
+      // encerra o lote. Insistir contra policy arrisca a conta inteira.
+      if (ehErroDePolitica(erro)) {
+        await db()
+          .from('automation_settings')
+          .update({
+            kill_switch: true,
+            updated_at: new Date().toISOString(),
+            updated_by: 'auto: erro de política da Meta (código 10)',
+          })
+          .eq('id', true)
+        console.error('[worker] erro de política — kill switch acionado automaticamente')
+        r.parouPor = 'ERRO_DE_POLITICA'
+      }
       const proxima = BACKOFF_MINUTOS[Math.min(item.attempts - 1, MAX_TENTATIVAS - 1)] ?? 32
       const esgotou = item.attempts >= MAX_TENTATIVAS
 

@@ -26,6 +26,8 @@ export type MotivoInelegivel =
   | 'PESSOA_NA_BLACKLIST'
   | 'JA_RECEBEU_DESTE_CONTEUDO'
   | 'JA_NA_FILA'
+  | 'JA_SEGUE'
+  | 'DM_RECENTE'
 
 export function expiraEm(comentadoEm: Date | string): Date {
   const base = typeof comentadoEm === 'string' ? new Date(comentadoEm) : comentadoEm
@@ -118,18 +120,39 @@ export async function revalidar(
   const { count: jaNaFila } = await filaQuery
   if ((jaNaFila ?? 0) > 0) return { pode: false, motivo: 'JA_NA_FILA' }
 
-  const { data: pessoa } = await db()
-    .from('instagram_users')
-    .select('is_blacklisted')
-    .eq('instagram_user_id', c.instagram_user_id)
-    .maybeSingle()
+  const [{ data: pessoa }, { data: cfg }] = await Promise.all([
+    db()
+      .from('instagram_users')
+      .select('is_blacklisted,last_private_reply_at,follow_status')
+      .eq('instagram_user_id', c.instagram_user_id)
+      .maybeSingle(),
+    db().from('automation_settings').select('cooldown_days_per_user').eq('id', true).single(),
+  ])
 
   if (pessoa?.is_blacklisted) return { pode: false, motivo: 'PESSOA_NA_BLACKLIST' }
 
-  // O cooldown global por pessoa FOI REMOVIDO deliberadamente (decisão de
-  // produto, 17/08/2026): bloquear "qualquer DM por N dias" impedia o caso
-  // legítimo de dois conteúdos diferentes. last_private_reply_at continua
-  // gravado como informação, mas não bloqueia mais nada.
+  // Quem comprovadamente já segue não recebe CTA de follow. UNKNOWN passa por
+  // aqui — o portão de SUGESTÃO já barrou; envio explícito humano é decisão
+  // humana. FOLLOWS é bloqueio duro em qualquer caminho.
+  if (pessoa?.follow_status === 'FOLLOWS') {
+    return { pode: false, motivo: 'JA_SEGUE' }
+  }
+
+  // REGRA GLOBAL (18/08/2026, reverte a decisão de 17/08): UMA private reply
+  // por PESSOA a cada N dias (60 por padrão), independente do conteúdo.
+  // João no Reel A hoje e no Reel B em 2h → uma DM só. A janela é editável
+  // no painel; a fonte de last_private_reply_at é um trigger no envio.
+  const cooldownDias = cfg?.cooldown_days_per_user ?? 60
+  if (pessoa?.last_private_reply_at && cooldownDias > 0) {
+    const desde = Date.now() - new Date(pessoa.last_private_reply_at).getTime()
+    if (desde < cooldownDias * 86_400_000) {
+      return {
+        pode: false,
+        motivo: 'DM_RECENTE',
+        detalhe: `última DM há ${Math.floor(desde / 86_400_000)} dias (janela: ${cooldownDias})`,
+      }
+    }
+  }
 
   return { pode: true, motivo: null }
 }

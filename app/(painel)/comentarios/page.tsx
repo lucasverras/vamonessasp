@@ -60,18 +60,34 @@ export default async function Comentarios({
               {oportunidade.pessoas.toLocaleString('pt-BR')}
             </p>
             <p className="mt-1.5 text-[0.875rem] text-ink-soft">
-              pessoas ainda podem receber mensagem
-              <span className="text-ink-faint"> · {oportunidade.comentarios} comentários</span>
+              pessoas elegíveis agora
+              <span className="text-ink-faint">
+                {' '}· {oportunidade.comentarios} comentários
+                {oportunidade.mencoes > 0 ? ` · ${oportunidade.mencoes} menções` : ''}
+              </span>
             </p>
           </div>
-          {oportunidade.horasParaExpirar !== null && oportunidade.horasParaExpirar < 48 ? (
-            <p className="max-w-[19rem] text-[0.8125rem] leading-relaxed text-warn">
-              A janela mais curta fecha em{' '}
-              <strong className="font-semibold">
-                {oportunidade.horasParaExpirar <= 0 ? 'menos de 1h' : `${oportunidade.horasParaExpirar}h`}
-              </strong>
-              . Passado o prazo, a Meta recusa o envio definitivamente.
-            </p>
+          {/* O que saiu da lista, e por quê — resumo discreto, sem poluir. */}
+          {oportunidade.removidas + oportunidade.duplicatasColapsadas > 0 ? (
+            <details className="max-w-[21rem] text-[0.8125rem] leading-relaxed text-ink-faint">
+              <summary className="cursor-pointer">
+                {oportunidade.duplicatasColapsadas + oportunidade.removidas} interações removidas
+                automaticamente
+              </summary>
+              <p className="mt-1.5">
+                {oportunidade.duplicatasColapsadas} duplicadas (mesma pessoa)
+                {oportunidade.removidasDetalhe.dmRecente > 0
+                  ? ` · ${oportunidade.removidasDetalhe.dmRecente} com DM nos últimos 60 dias`
+                  : ''}
+                {oportunidade.removidasDetalhe.jaSegue > 0
+                  ? ` · ${oportunidade.removidasDetalhe.jaSegue} já seguem`
+                  : ''}
+                {oportunidade.removidasDetalhe.blacklist > 0
+                  ? ` · ${oportunidade.removidasDetalhe.blacklist} bloqueadas`
+                  : ''}
+                . Continuam registradas para auditoria — só saem da lista de trabalho.
+              </p>
+            </details>
           ) : null}
         </section>
       ) : null}

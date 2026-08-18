@@ -112,19 +112,41 @@ export async function contarPorStatus() {
   }
 }
 
-/** Quantas pessoas ÚNICAS ainda podem receber, e quantas horas restam. */
+/**
+ * A oportunidade REAL, por pessoa, já com todos os filtros do banco:
+ * dedupe global, quem já segue, janela de 60 dias, blacklist, expirados.
+ * O número exibido é o número que pode de fato receber — nunca inflado.
+ */
 export async function resumoOportunidade() {
-  const { data, error } = await db().rpc('resumo_oportunidade')
+  const { data, error } = await db().rpc('oportunidades_resumo')
   if (error) throw new Error(`Falha ao resumir oportunidade: ${error.message}`)
-  const r = (data ?? [])[0] as
-    | { pessoas: number; comentarios: number; expira_em: string | null }
+  const r = (Array.isArray(data) ? data[0] : data) as
+    | {
+        comentarios_elegiveis: number
+        mencoes_elegiveis: number
+        pessoas_brutas: number
+        pessoas_elegiveis: number
+        removidas_duplicidade: number
+        removidas_ja_segue: number
+        removidas_dm_recente: number
+        removidas_blacklist: number
+      }
     | undefined
+  const removidas =
+    Number(r?.removidas_ja_segue ?? 0) +
+    Number(r?.removidas_dm_recente ?? 0) +
+    Number(r?.removidas_blacklist ?? 0)
   return {
-    pessoas: r?.pessoas ?? 0,
-    comentarios: r?.comentarios ?? 0,
-    proximaExpiracao: r?.expira_em ?? null,
-    horasParaExpirar: r?.expira_em
-      ? Math.floor((new Date(r.expira_em).getTime() - Date.now()) / 3_600_000)
-      : null,
+    comentarios: Number(r?.comentarios_elegiveis ?? 0),
+    mencoes: Number(r?.mencoes_elegiveis ?? 0),
+    pessoasBrutas: Number(r?.pessoas_brutas ?? 0),
+    pessoas: Number(r?.pessoas_elegiveis ?? 0),
+    duplicatasColapsadas: Number(r?.removidas_duplicidade ?? 0),
+    removidas,
+    removidasDetalhe: {
+      jaSegue: Number(r?.removidas_ja_segue ?? 0),
+      dmRecente: Number(r?.removidas_dm_recente ?? 0),
+      blacklist: Number(r?.removidas_blacklist ?? 0),
+    },
   }
 }

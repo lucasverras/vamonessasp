@@ -9,7 +9,9 @@ import {
   campoDoEvento,
   chaveDeDedupe,
   extrairComentarios,
+  extrairMencoes,
 } from '@/lib/instagram/webhooks'
+import { persistirMencoes } from '@/lib/instagram/mentions'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,6 +93,12 @@ export async function POST(request: NextRequest) {
       if (conta) {
         await persistirComentarios(comentarios, conta.id, conta.instagramUserId)
       }
+    }
+
+    // Menções (field oficial `mentions`): nova fonte de oportunidade de DM.
+    const mencoes = extrairMencoes(payload)
+    if (mencoes.length > 0) {
+      await persistirMencoes(mencoes)
     }
 
     await db()

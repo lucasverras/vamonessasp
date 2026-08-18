@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { exigirAdmin } from '@/lib/auth/guarda'
-import { criarCampanha, definirKillSwitch } from '@/lib/campaigns/create'
+import { criarCampanha, definirKillSwitch, previaCampanha } from '@/lib/campaigns/create'
 
 /**
  * Server actions da tela de comentários.
@@ -58,4 +58,22 @@ export async function alternarKillSwitch(ligado: boolean) {
   await definirKillSwitch(ligado)
   revalidatePath('/comentarios')
   revalidatePath('/configuracoes/instagram')
+}
+
+/**
+ * Prévia da seleção: quantas pessoas REALMENTE receberão, calculado pelo
+ * servidor com as mesmas regras do envio (dedupe global, 60 dias, follow,
+ * blacklist, janela). O modal mostra este número, não o da seleção da tela.
+ */
+export async function previaSelecao(idsCsv: string): Promise<{
+  elegiveis: number
+  removidos: Array<[string, number]>
+}> {
+  await exigirAdmin('pré-validar campanha')
+  const ids = idsCsv.split(',').map((s) => s.trim()).filter(Boolean)
+  const r = await previaCampanha(ids)
+  return {
+    elegiveis: r.elegiveis,
+    removidos: Object.entries(r.removidosPorMotivo).sort((a, b) => b[1] - a[1]),
+  }
 }

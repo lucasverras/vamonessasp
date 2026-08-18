@@ -32,30 +32,47 @@ const RISCO = {
 } as const
 
 export default async function Revisao() {
-  const { data: analises, error } = await db()
-    .from('comment_analyses')
-    .select(
-      'id,intent,intent_confidence,risk_level,risk_reasons,requires_human,suggested_public_reply,suggested_private_reply,cta_strategy,decision,decision_reason,model,prompt_version,tokens_in,tokens_out,latency_ms,error_message,created_at,instagram_comments:comment_id(text,username,eligibility_status)',
-    )
-    .order('created_at', { ascending: false })
-    .limit(60)
+  // Uma ida ao banco, sete respostas. Antes eram 5 awaits SEQUENCIAIS — cada
+  // um esperava o anterior sem depender dele: 2s de TTFB por puro waterfall.
+  const [
+    { data: analises, error },
+    { data: cfg },
+    { data: acoes },
+    { data: acerto },
+    { count: pendentes },
+    { data: filaRaw },
+    { data: taxaRaw },
+  ] = await Promise.all([
+    db()
+      .from('comment_analyses')
+      .select(
+        'id,intent,intent_confidence,risk_level,risk_reasons,requires_human,suggested_public_reply,suggested_private_reply,cta_strategy,decision,decision_reason,model,prompt_version,tokens_in,tokens_out,latency_ms,error_message,created_at,instagram_comments:comment_id(text,username,eligibility_status)',
+      )
+      .order('created_at', { ascending: false })
+      .limit(60),
+    db()
+      .from('automation_settings')
+      .select('shadow_mode,kill_switch,auto_approve_intents,never_auto_intents')
+      .eq('id', true)
+      .single(),
+    db()
+      .from('comment_actions')
+      .select('id,analysis_id,action_type,status,generated_text,final_text,edited_by')
+      .in('status', ['SHADOW', 'PENDING_APPROVAL', 'QUEUED', 'SENT', 'REJECTED', 'SKIPPED', 'EXPIRED'])
+      .order('created_at', { ascending: false })
+      .limit(400),
+    db().rpc('acerto_por_intencao'),
+    db()
+      .from('instagram_comments')
+      .select('id', { count: 'exact', head: true })
+      .eq('analysis_status', 'PENDING')
+      .eq('is_from_account', false),
+    db().rpc('fila_precisa_de_voce', { limite: 30 }),
+    db().rpc('taxa_automacao'),
+  ])
 
   if (error) throw new Error(`Falha ao carregar análises: ${error.message}`)
 
-  const { data: cfg } = await db()
-    .from('automation_settings')
-    .select('shadow_mode,kill_switch,auto_approve_intents,never_auto_intents')
-    .eq('id', true)
-    .single()
-
-  const { data: acoes } = await db()
-    .from('comment_actions')
-    .select('id,analysis_id,action_type,status,generated_text,final_text,edited_by')
-    .in('status', ['SHADOW', 'PENDING_APPROVAL', 'QUEUED', 'SENT', 'REJECTED', 'SKIPPED', 'EXPIRED'])
-    .order('created_at', { ascending: false })
-    .limit(400)
-
-  const { data: acerto } = await db().rpc('acerto_por_intencao')
   const porAnalise = new Map<string, typeof acoes>()
   for (const a of acoes ?? []) {
     if (!a.analysis_id) continue
@@ -65,19 +82,6 @@ export default async function Revisao() {
     ((acerto ?? []) as Array<{ intent: string; aprovadas_sem_edicao: number; total_decidido: number }>)
       .map((r) => [r.intent, r]),
   )
-
-  const { count: pendentes } = await db()
-    .from('instagram_comments')
-    .select('id', { count: 'exact', head: true })
-    .eq('analysis_status', 'PENDING')
-    .eq('is_from_account', false)
-
-  // A fila "precisa de você": HOLDs abertos, já priorizados no banco
-  // (pergunta > reclamação > resto; mais antigo primeiro).
-  const [{ data: filaRaw }, { data: taxaRaw }] = await Promise.all([
-    db().rpc('fila_precisa_de_voce', { limite: 30 }),
-    db().rpc('taxa_automacao'),
-  ])
   const taxa = (Array.isArray(taxaRaw) ? taxaRaw[0] : taxaRaw) as Record<string, number> | null
 
   const fila = montarFilaPrecisaDeVoce((filaRaw ?? []) as LinhaFila[])

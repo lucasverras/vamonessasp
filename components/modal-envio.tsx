@@ -2,7 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, Lock, X } from 'lucide-react'
-import { enviarSelecao, type RespostaEnvio } from '@/app/(painel)/comentarios/acoes'
+import { enviarSelecao, previaSelecao, type RespostaEnvio } from '@/app/(painel)/comentarios/acoes'
+
+const MOTIVO_LEGIVEL: Record<string, string> = {
+  SKIPPED_DUPLICATE: 'mesma pessoa em outra linha',
+  DM_RECENTE: 'DM nos últimos 60 dias',
+  JA_SEGUE: 'já segue a página',
+  FORA_DA_JANELA: 'janela de 7 dias fechada',
+  JA_RECEBEU_DESTE_CONTEUDO: 'já recebeu deste conteúdo',
+  JA_NA_FILA: 'já está na fila',
+  PESSOA_NA_BLACKLIST: 'bloqueada',
+  SEM_IGSID: 'sem identificador',
+  COMENTARIO_APAGADO: 'comentário apagado',
+}
 
 const MENSAGEM_PADRAO = `Valeu por comentar no nosso vídeo! 👀
 
@@ -23,7 +35,23 @@ export function ModalEnvio({
   const [nome, setNome] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [resposta, setResposta] = useState<RespostaEnvio | null>(null)
+  const [previa, setPrevia] = useState<{
+    elegiveis: number
+    removidos: Array<[string, number]>
+  } | null>(null)
   const dialog = useRef<HTMLDivElement>(null)
+
+  // O servidor calcula quantos REALMENTE recebem, com as regras do envio.
+  // O botão passa a dizer "Enviar para N" com o N verdadeiro.
+  useEffect(() => {
+    let vivo = true
+    previaSelecao(ids.join(','))
+      .then((p) => vivo && setPrevia(p))
+      .catch(() => vivo && setPrevia(null))
+    return () => {
+      vivo = false
+    }
+  }, [ids])
 
   // Esc fecha, e o foco entra no diálogo — teclado precisa funcionar numa ação
   // desta gravidade.
@@ -104,8 +132,18 @@ export function ModalEnvio({
                   Enviar mensagem
                 </h2>
                 <p className="tnum mt-1 text-[0.875rem] text-ink-soft">
-                  {ids.length} {ids.length === 1 ? 'pessoa selecionada' : 'pessoas selecionadas'}
+                  {previa === null
+                    ? `validando ${ids.length} selecionados…`
+                    : `${previa.elegiveis} ${previa.elegiveis === 1 ? 'destinatário elegível' : 'destinatários elegíveis'}`}
                 </p>
+                {previa && previa.removidos.length > 0 ? (
+                  <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-ink-faint">
+                    {previa.removidos
+                      .map(([m, n]) => `${n} ${MOTIVO_LEGIVEL[m] ?? m.toLowerCase()}`)
+                      .join(' · ')}{' '}
+                    — removidos automaticamente
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -149,9 +187,9 @@ export function ModalEnvio({
             <p className="mt-3 flex gap-2 rounded-lg border border-line bg-surface/60 px-3 py-2.5 text-[0.75rem] leading-relaxed text-ink-faint">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                Cada pessoa recebe <strong className="text-ink-soft">uma única</strong> mensagem,
-                para sempre. O texto é congelado na campanha e cada envio é revalidado no momento
-                de sair.
+                Cada pessoa recebe <strong className="text-ink-soft">uma</strong> mensagem por
+                janela de 60 dias, independente do vídeo. O texto é congelado na campanha e cada
+                envio é revalidado no momento de sair.
               </span>
             </p>
 
@@ -172,11 +210,13 @@ export function ModalEnvio({
               </button>
               <button
                 type="submit"
-                disabled={enviando || mensagem.trim().length < 10}
+                disabled={enviando || mensagem.trim().length < 10 || previa?.elegiveis === 0}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-[0.875rem] font-semibold text-void transition-opacity disabled:opacity-40"
               >
                 {enviando ? <Loader2 className="size-4 animate-spin" /> : null}
-                {enviando ? 'Criando fila…' : `Enviar para ${ids.length}`}
+                {enviando
+                  ? 'Criando fila…'
+                  : `Enviar para ${previa?.elegiveis ?? ids.length}`}
               </button>
             </div>
           </form>

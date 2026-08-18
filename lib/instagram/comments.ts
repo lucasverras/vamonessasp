@@ -237,10 +237,13 @@ export async function assinarWebhooks() {
   const appToken = `${env.metaAppId}|${env.metaAppSecret}`
 
   try {
+    // comments + mentions: menção em comentário/legenda chega pelo field
+    // oficial `mentions`. Story mention chega por `messages`, que exige
+    // Advanced Access — não assinamos o que ainda não podemos receber.
     resultados.objetoInstagram = await metaPost(`${env.metaAppId}/subscriptions`, appToken, {
       object: 'instagram',
       callback_url: callbacks.webhook,
-      fields: 'comments',
+      fields: 'comments,mentions',
       verify_token: env.webhookVerifyToken,
       include_values: 'true',
     })

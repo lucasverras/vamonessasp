@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagram/account'
 import { getAutomacao } from '@/lib/campaigns/create'
-import { definirCadencia, definirModoAutomacao, definirTemplateDm } from './acoes-automacao'
+import { db } from '@/lib/db'
+import { definirCadencia, definirModoAutomacao, definirRegrasDm, definirTemplateDm, definirTemplateMencao } from './acoes-automacao'
 import { alternarKillSwitch } from '../../comentarios/acoes'
 
 export const dynamic = 'force-dynamic'
@@ -351,7 +352,75 @@ export default async function InstagramSettingsPage({
             Salvar template
           </button>
         </form>
+
+        {/* Regra global de DM (18/08): UMA por pessoa a cada N dias, qualquer
+            fonte — comentário ou menção. */}
+        <form
+          action={async (form: FormData) => {
+            'use server'
+            await definirRegrasDm(form)
+          }}
+          className="mt-6 border-t border-line-soft pt-5"
+        >
+          <p className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">Regras de DM</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className="flex items-center gap-2 text-[0.8125rem]">
+              Intervalo entre DMs por pessoa:
+              <input
+                type="number"
+                name="cooldown_dias"
+                min={0}
+                max={365}
+                defaultValue={automacao?.cooldown_days_per_user ?? 60}
+                className="tnum w-20 rounded-lg border border-line bg-void px-2.5 py-1.5 text-right"
+              />
+              dias
+            </label>
+            <label className="flex items-center gap-2 text-[0.8125rem]">
+              <input type="checkbox" name="dm_on_comment" defaultChecked={automacao?.dm_on_comment ?? true} className="size-4 accent-[var(--color-accent)]" />
+              DM após comentário
+            </label>
+            <label className="flex items-center gap-2 text-[0.8125rem]">
+              <input type="checkbox" name="dm_on_mention" defaultChecked={automacao?.dm_on_mention ?? true} className="size-4 accent-[var(--color-accent)]" />
+              DM após menção
+            </label>
+            <button type="submit" className="rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px">
+              Salvar regras
+            </button>
+          </div>
+          <p className="mt-2 max-w-lg text-[0.75rem] leading-relaxed text-ink-faint">
+            Quem comprovadamente já segue nunca recebe DM (verificação oficial; hoje aguardando
+            Advanced Access). A janela vale para qualquer origem — João comentou hoje e mencionou
+            amanhã: uma DM só.
+          </p>
+        </form>
+
+        <form
+          action={async (form: FormData) => {
+            'use server'
+            await definirTemplateMencao(form)
+          }}
+          className="mt-6 border-t border-line-soft pt-5"
+        >
+          <label className="block">
+            <span className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+              Template da DM de MENÇÃO
+            </span>
+            <textarea
+              name="dm_mention_template"
+              rows={4}
+              defaultValue={automacao?.dm_mention_template ?? ''}
+              className="mt-1.5 w-full rounded-lg border border-line bg-void px-3 py-2.5 text-[0.875rem] leading-relaxed outline-none focus:border-accent"
+            />
+          </label>
+          <button type="submit" className="mt-2 rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px">
+            Salvar template de menção
+          </button>
+        </form>
       </section>
+
+      {/* Saúde da automação: números das últimas 24h, direto do banco. */}
+      <SaudeAutomacao />
 
       <section className="mt-8">
         <h2 className="text-[0.6875rem] font-medium uppercase tracking-wider text-ink-faint">
@@ -382,5 +451,39 @@ export default async function InstagramSettingsPage({
         )}
       </section>
     </main>
+  )
+}
+
+async function SaudeAutomacao() {
+  const { data } = await db().rpc('saude_automacao')
+  const s = (Array.isArray(data) ? data[0] : data) as Record<string, number> | null
+  if (!s) return null
+  const politica = Number(s.erros_de_politica_24h ?? 0)
+  return (
+    <section className="mt-6 rounded-card border border-line bg-canvas p-5">
+      <h2 className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">Automação</h2>
+      <dl className="tnum mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-5">
+        {[
+          ['Status', politica > 0 ? 'PAUSADA' : 'Normal'],
+          ['DMs últimas 24h', String(s.enviadas_24h ?? 0)],
+          ['Falhas 24h', String(s.falhas_24h ?? 0)],
+          ['Fila', String(s.na_fila ?? 0)],
+          ['Erros de política', String(politica)],
+        ].map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">{k}</dt>
+            <dd className={`mt-0.5 font-display text-lg font-semibold ${k === 'Status' && politica > 0 ? 'text-danger' : ''}`}>
+              {v}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {politica > 0 ? (
+        <p className="mt-3 rounded-lg border border-danger/30 bg-danger-wash/50 px-3 py-2 text-[0.8125rem] text-danger">
+          Erro de política da Meta nas últimas 24h — o kill switch foi acionado automaticamente e
+          novos envios estão parados. Investigue antes de reativar.
+        </p>
+      ) : null}
+    </section>
   )
 }

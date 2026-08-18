@@ -1,7 +1,7 @@
 import 'server-only'
 import { db } from '../db'
 import { getConnectedAccount, getPageToken } from '../instagram/account'
-import { MetaError, describeFailure } from '../instagram/errors'
+import { MetaError, describeFailure, ehErroDePolitica } from '../instagram/errors'
 import { enviarRespostaPrivada } from '../instagram/private-replies'
 import { enviarRespostaPublica } from '../instagram/public-replies'
 import { validarRespostaPublica } from '../ai/respostas'
@@ -180,6 +180,20 @@ export async function enviarAprovada(
   } catch (erro) {
     const meta = erro instanceof MetaError ? erro : null
     const permanente = meta?.errorClass === 'PERMANENT'
+
+    // Erro de POLÍTICA (código 10): freio automático. Insistir em loop contra
+    // policy da Meta arrisca a conta inteira — melhor parar tudo e você decidir.
+    if (ehErroDePolitica(erro)) {
+      await db()
+        .from('automation_settings')
+        .update({
+          kill_switch: true,
+          updated_at: new Date().toISOString(),
+          updated_by: 'auto: erro de política da Meta (código 10)',
+        })
+        .eq('id', true)
+      console.error('[aprovar] erro de política — kill switch acionado automaticamente')
+    }
     // Permanente (comentário removido, sem permissão): FAILED, sem loop.
     // Temporário: volta para PENDING_APPROVAL — você tenta de novo, sem retry
     // automático escondido no modo de aprovação.

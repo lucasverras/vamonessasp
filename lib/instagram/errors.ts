@@ -111,3 +111,12 @@ export function describeFailure(error: MetaError): string {
       return error.message
   }
 }
+
+/**
+ * Erro de POLÍTICA de messaging da Meta (código 10: permissão/policy).
+ * Diferente de rate limit ou token: continuar tentando arrisca a conta.
+ * Quem detectar isto trava o kill switch automaticamente.
+ */
+export function ehErroDePolitica(erro: unknown): boolean {
+  return erro instanceof MetaError && erro.code === 10
+}

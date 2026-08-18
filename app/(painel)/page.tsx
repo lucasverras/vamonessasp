@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ArrowUpRight, Play } from 'lucide-react'
 import { GrowthChart } from '@/components/growth-chart'
+import { resumoOportunidade } from '@/lib/analytics/comentarios'
 import { getFunnelToday, getOverview, getTopContent } from '@/lib/analytics/overview'
 
 export const dynamic = 'force-dynamic'
@@ -18,10 +19,11 @@ function compacto(n: number | null) {
 }
 
 export default async function VisaoGeral() {
-  const [{ conta, kpis, serieDiaria }, top, funil] = await Promise.all([
+  const [{ conta, kpis, serieDiaria }, top, funil, oportunidade] = await Promise.all([
     getOverview(30),
     getTopContent(6),
     getFunnelToday(),
+    resumoOportunidade(),
   ])
 
   const [seguidores, novos, ...resto] = kpis
@@ -105,6 +107,41 @@ export default async function VisaoGeral() {
           </div>
         ))}
       </section>
+
+      {/* O card operacional: quem pode receber DM AGORA, já limpo no banco —
+          sem duplicados, sem quem segue, sem DM < 60 dias, sem expirados. */}
+      {oportunidade.pessoas > 0 ? (
+        <section
+          className="rise mt-6 flex flex-wrap items-center justify-between gap-4 rounded-card border border-accent/25 bg-accent-wash/40 px-5 py-4"
+          style={{ animationDelay: '140ms' }}
+        >
+          <div>
+            <p className="text-[0.6875rem] font-medium uppercase tracking-[0.1em] text-accent">
+              Oportunidades
+            </p>
+            <p className="mt-1 text-[0.9375rem]">
+              <strong className="tnum font-display text-2xl font-semibold">
+                {nf(oportunidade.pessoas)}
+              </strong>{' '}
+              pessoas elegíveis agora
+              <span className="text-[0.8125rem] text-ink-faint">
+                {' '}· {nf(oportunidade.comentarios)} comentários
+                {oportunidade.mencoes > 0 ? ` · ${nf(oportunidade.mencoes)} menções` : ''}
+                {oportunidade.removidas + oportunidade.duplicatasColapsadas > 0
+                  ? ` · ${nf(oportunidade.removidas + oportunidade.duplicatasColapsadas)} removidas automaticamente`
+                  : ''}
+              </span>
+            </p>
+          </div>
+          <Link
+            href="/comentarios"
+            className="group inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
+          >
+            Trabalhar {nf(oportunidade.pessoas)}
+            <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </section>
+      ) : null}
 
       <section className="rise mt-10" style={{ animationDelay: '160ms' }}>
         <div className="mb-4 flex items-baseline justify-between gap-4">

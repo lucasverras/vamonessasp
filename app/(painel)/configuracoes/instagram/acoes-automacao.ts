@@ -97,3 +97,46 @@ export async function definirCadencia(form: FormData): Promise<ResultadoCfg> {
   revalidatePath('/configuracoes/instagram')
   return { ok: true }
 }
+
+/** Janela global entre DMs por pessoa + fontes de oportunidade. ADMIN. */
+export async function definirRegrasDm(form: FormData): Promise<ResultadoCfg> {
+  try {
+    await exigirAdmin('editar regras de DM')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const dias = Number(form.get('cooldown_dias'))
+  if (!Number.isFinite(dias) || dias < 0 || dias > 365) {
+    return { ok: false, erro: 'Janela inválida (0–365 dias).' }
+  }
+  const { error } = await db()
+    .from('automation_settings')
+    .update({
+      cooldown_days_per_user: Math.round(dias),
+      dm_on_comment: form.get('dm_on_comment') === 'on',
+      dm_on_mention: form.get('dm_on_mention') === 'on',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', true)
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/configuracoes/instagram')
+  return { ok: true }
+}
+
+/** Template da DM de MENÇÃO. ADMIN. */
+export async function definirTemplateMencao(form: FormData): Promise<ResultadoCfg> {
+  try {
+    await exigirAdmin('editar o template de menção')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const texto = String(form.get('dm_mention_template') ?? '').trim()
+  if (texto.length < 10) return { ok: false, erro: 'Template curto demais.' }
+  const { error } = await db()
+    .from('automation_settings')
+    .update({ dm_mention_template: texto, updated_at: new Date().toISOString() })
+    .eq('id', true)
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/configuracoes/instagram')
+  return { ok: true }
+}

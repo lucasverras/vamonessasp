@@ -40,8 +40,8 @@ export async function criarCampanha(args: {
     .select('id,instagram_user_id,media_id')
     .in('id', args.commentIds)
 
-  // Dedupe por PESSOA+CONTEÚDO — a mesma regra da constraint. A mesma pessoa
-  // em dois Reels diferentes pode receber duas; no mesmo Reel, nunca.
+  // Dedupe GLOBAL por pessoa (regra de 18/08): João com 5 comentários e 1
+  // menção aparece UMA vez — a janela de 60 dias em revalidar garante o resto.
   const vistos = new Set<string>()
   const porComentario = new Map<string, { uid: string | null; mid: string | null }>()
   let dedupePorPessoa = 0
@@ -49,13 +49,12 @@ export async function criarCampanha(args: {
   for (const c of comentarios ?? []) {
     porComentario.set(c.id, { uid: c.instagram_user_id, mid: c.media_id })
     if (c.instagram_user_id) {
-      const par = `${c.instagram_user_id}:${c.media_id}`
-      if (vistos.has(par)) {
+      if (vistos.has(c.instagram_user_id)) {
         dedupePorPessoa += 1
-        recusados.push({ commentId: c.id, motivo: 'OUTRO_COMENTARIO_DA_MESMA_PESSOA_NO_CONTEUDO' })
+        recusados.push({ commentId: c.id, motivo: 'SKIPPED_DUPLICATE' })
         continue
       }
-      vistos.add(par)
+      vistos.add(c.instagram_user_id)
     }
 
     const veredito = await revalidar(c.id)
@@ -133,9 +132,46 @@ export async function getAutomacao() {
   const { data } = await db()
     .from('automation_settings')
     .select(
-      'kill_switch,shadow_mode,dm_hourly_cap,dm_daily_cap,cooldown_days_per_user,require_approval,reply_mode,delay_min_seconds,delay_max_seconds,reply_praise,reply_known_questions,reply_mentions,automation_started_at,dm_template',
+      'kill_switch,shadow_mode,dm_hourly_cap,dm_daily_cap,cooldown_days_per_user,require_approval,reply_mode,delay_min_seconds,delay_max_seconds,reply_praise,reply_known_questions,reply_mentions,automation_started_at,dm_template,dm_mention_template,dm_on_comment,dm_on_mention',
     )
     .eq('id', true)
     .single()
   return data
+}
+
+/**
+ * PRÉVIA da campanha — mesma lógica do envio, zero efeito colateral.
+ *
+ * É o que a interface mostra ANTES do botão: "137 destinatários elegíveis".
+ * O número que você vê é o número que o servidor calculou com as MESMAS
+ * regras que valerão no envio — não uma contagem otimista da tela.
+ */
+export async function previaCampanha(commentIds: string[]): Promise<{
+  elegiveis: number
+  removidosPorMotivo: Record<string, number>
+}> {
+  const { data: comentarios } = await db()
+    .from('instagram_comments')
+    .select('id,instagram_user_id')
+    .in('id', commentIds.slice(0, 500))
+
+  const vistos = new Set<string>()
+  const motivos: Record<string, number> = {}
+  let elegiveis = 0
+
+  for (const c of comentarios ?? []) {
+    if (c.instagram_user_id && vistos.has(c.instagram_user_id)) {
+      motivos.SKIPPED_DUPLICATE = (motivos.SKIPPED_DUPLICATE ?? 0) + 1
+      continue
+    }
+    if (c.instagram_user_id) vistos.add(c.instagram_user_id)
+
+    const v = await revalidar(c.id)
+    if (v.pode) elegiveis += 1
+    else {
+      const m = v.motivo ?? 'OUTRO'
+      motivos[m] = (motivos[m] ?? 0) + 1
+    }
+  }
+  return { elegiveis, removidosPorMotivo: motivos }
 }
