@@ -145,7 +145,7 @@ export async function getTopContent(limit = 8) {
 
 export async function getFunnelToday() {
   const hoje = new Date().toISOString().slice(0, 10)
-  const [comentarios, elegiveis, enviadas, precisaDeVoce] = await Promise.all([
+  const [comentarios, elegiveis, enviadas, precisaDeVoce, aprovadasHoje] = await Promise.all([
     db()
       .from('instagram_comments')
       .select('id', { count: 'exact', head: true })
@@ -164,11 +164,17 @@ export async function getFunnelToday() {
       .from('comment_actions')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'PENDING_APPROVAL'),
+    db()
+      .from('comment_actions')
+      .select('id', { count: 'exact', head: true })
+      .gte('approved_at', `${hoje}T00:00:00Z`)
+      .not('approved_by', 'is', null),
   ])
   return {
     comentariosHoje: comentarios.count ?? 0,
     elegiveis: elegiveis.count ?? 0,
     enviadas: enviadas.count ?? 0,
     precisaDeVoce: precisaDeVoce.count ?? 0,
+    aprovadasHoje: aprovadasHoje.count ?? 0,
   }
 }

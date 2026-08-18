@@ -37,20 +37,25 @@ export async function criarCampanha(args: {
   // isto, quem comentou três vezes receberia três DMs — o oposto do objetivo.
   const { data: comentarios } = await db()
     .from('instagram_comments')
-    .select('id,instagram_user_id')
+    .select('id,instagram_user_id,media_id')
     .in('id', args.commentIds)
 
+  // Dedupe por PESSOA+CONTEÚDO — a mesma regra da constraint. A mesma pessoa
+  // em dois Reels diferentes pode receber duas; no mesmo Reel, nunca.
   const vistos = new Set<string>()
+  const porComentario = new Map<string, { uid: string | null; mid: string | null }>()
   let dedupePorPessoa = 0
 
   for (const c of comentarios ?? []) {
+    porComentario.set(c.id, { uid: c.instagram_user_id, mid: c.media_id })
     if (c.instagram_user_id) {
-      if (vistos.has(c.instagram_user_id)) {
+      const par = `${c.instagram_user_id}:${c.media_id}`
+      if (vistos.has(par)) {
         dedupePorPessoa += 1
-        recusados.push({ commentId: c.id, motivo: 'OUTRO_COMENTARIO_DA_MESMA_PESSOA' })
+        recusados.push({ commentId: c.id, motivo: 'OUTRO_COMENTARIO_DA_MESMA_PESSOA_NO_CONTEUDO' })
         continue
       }
-      vistos.add(c.instagram_user_id)
+      vistos.add(par)
     }
 
     const veredito = await revalidar(c.id)
@@ -90,6 +95,10 @@ export async function criarCampanha(args: {
           status: 'QUEUED' as const,
           generated_text: mensagem,
           final_text: mensagem,
+          // As colunas da constraint pessoa+conteúdo. Sem elas a unique não
+          // enxerga a linha (NULL não colide) — achado da auditoria.
+          instagram_user_id: porComentario.get(commentId)?.uid ?? null,
+          media_id: porComentario.get(commentId)?.mid ?? null,
         })),
       )
     if (erroDest) throw new Error(`Falha ao enfileirar: ${erroDest.message}`)

@@ -21,7 +21,7 @@ import { NUNCA_AUTOMATICO, type Intencao } from '../ai/prompt'
  */
 
 export interface ConfigAutomacao {
-  reply_mode: 'OFF' | 'DRY_RUN' | 'LIVE'
+  reply_mode: 'OFF' | 'DRY_RUN' | 'APPROVAL_REQUIRED' | 'LIVE'
   kill_switch: boolean
   delay_min_seconds: number
   delay_max_seconds: number
@@ -100,7 +100,18 @@ export function decidirDestino(args: {
     return { status: 'PENDING_APPROVAL', agendadoPara: null, motivo: 'confianca abaixo do minimo' }
   }
 
-  // Tudo liberado: agenda com atraso humano sorteado na janela configurada.
+  // APPROVAL_REQUIRED: a IA acha que sabe responder e a resposta está pronta —
+  // mas nada sai sem um clique. A sugestão fica persistida; abrir a tela dez
+  // minutos depois mostra EXATAMENTE o mesmo texto, sem nova chamada de IA.
+  if (cfg.reply_mode === 'APPROVAL_REQUIRED') {
+    return {
+      status: 'PENDING_APPROVAL',
+      agendadoPara: null,
+      motivo: 'aguardando aprovação humana (modo APPROVAL_REQUIRED)',
+    }
+  }
+
+  // LIVE: agenda com atraso humano sorteado na janela configurada.
   const min = Math.max(0, cfg.delay_min_seconds)
   const max = Math.max(min, cfg.delay_max_seconds)
   const atrasoS = min + Math.floor(Math.random() * (max - min + 1))

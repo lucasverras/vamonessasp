@@ -56,6 +56,13 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
     return { ...vazio, parouPor: 'KILL_SWITCH' }
   }
 
+  // Em APPROVAL_REQUIRED (e OFF) o worker automático NÃO reivindica nada: o
+  // único caminho de envio é a rota de aprovação explícita, que valida e envia
+  // na hora do clique. QUEUED remanescente fica intacto para quando voltar LIVE.
+  if (cfg?.reply_mode !== 'LIVE' && cfg?.reply_mode !== 'DRY_RUN') {
+    return { ...vazio, parouPor: 'SEM_TRABALHO' }
+  }
+
   // 2. Orçamento da hora.
   const { data: orcamentoRaw } = await db().rpc('orcamento_envio_restante')
   const orcamento = Number(orcamentoRaw ?? 0)

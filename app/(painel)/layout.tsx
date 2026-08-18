@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bot,
   CalendarRange,
+  CheckCheck,
   Clock4,
   LayoutGrid,
   MessageSquare,
@@ -14,10 +15,12 @@ import {
 } from 'lucide-react'
 import { sair } from '@/app/entrar/acoes'
 import { sessaoAtual } from '@/lib/auth/guarda'
+import { db } from '@/lib/db'
 import { getConnectedAccount } from '@/lib/instagram/account'
 
 const NAV = [
   { href: '/', label: 'Visão geral', icon: LayoutGrid },
+  { href: '/aprovacoes', label: 'Aprovações', icon: CheckCheck },
   { href: '/conteudos', label: 'Conteúdos', icon: BarChart3 },
   { href: '/crescimento', label: 'Crescimento', icon: TrendingUp },
   { href: '/comentarios', label: 'Comentários', icon: MessageSquare },
@@ -28,7 +31,11 @@ const NAV = [
 ]
 
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
-  const [conta, sessao] = await Promise.all([getConnectedAccount(), sessaoAtual()])
+  const [conta, sessao, { count: aguardando }] = await Promise.all([
+    getConnectedAccount(),
+    sessaoAtual(),
+    db().from('comment_actions').select('id', { count: 'exact', head: true }).eq('status', 'PENDING_APPROVAL'),
+  ])
   const admin = sessao?.papel === 'ADMIN'
 
   return (
@@ -52,6 +59,11 @@ export default async function PainelLayout({ children }: { children: React.React
             >
               <Icon className="size-4 shrink-0 stroke-[1.75] transition-colors group-hover:text-accent" />
               <span className="whitespace-nowrap">{label}</span>
+              {href === '/aprovacoes' && (aguardando ?? 0) > 0 ? (
+                <span className="tnum ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[0.625rem] font-bold text-void">
+                  {aguardando}
+                </span>
+              ) : null}
             </Link>
           ))}
         </nav>
