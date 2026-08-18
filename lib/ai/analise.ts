@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
+import { gateDmParaIgsid } from '../instagram/follow-status'
 import { exemplosDeTom, pareceRespostaEsquiva } from './respostas'
 import { db } from '../db'
 import {
@@ -247,27 +248,65 @@ export async function analisarPendentes(limite = 20) {
       })
 
       const latencia = Date.now() - inicio
-      const analise = resposta.output_parsed
+      let analise = resposta.output_parsed
       if (!analise) throw new Error('resposta sem saída estruturada')
+      let tokensIn = resposta.usage?.input_tokens ?? 0
+      let tokensOut = resposta.usage?.output_tokens ?? 0
+
+      // §40: resposta que serviria para cem comentários diferentes não serve
+      // para este. UMA regeneração com instrução extra — nunca loop — e, se
+      // continuar solta, quem decide é você (revisão), não o modelo.
+      const entrada = contexto.entrada as {
+        comentario: string
+        legenda: string | null
+        fatosDoConteudo?: Record<string, string | null>
+      }
+      const ancorada = () =>
+        respostaAncoradaNoComentario({
+          intent: analise!.intencao,
+          resposta: analise!.resposta_publica,
+          comentario: entrada.comentario,
+          legenda: entrada.legenda,
+          fatos: entrada.fatosDoConteudo ?? {},
+        })
+      let aindaGenerica = false
+      if (!ancorada()) {
+        const retry = await openai().responses.parse({
+          model: MODELO_PADRAO,
+          instructions: SYSTEM_PROMPT,
+          input: [
+            { role: 'user', content: contexto.prompt },
+            {
+              role: 'user',
+              content:
+                'Sua resposta anterior era genérica demais — serviria para qualquer comentário. Reescreva ancorando no que ESTA pessoa perguntou, usando o fato concreto do contexto. Se o fato não existir no contexto, a decisão é aguardar_revisao.',
+            },
+          ],
+          text: { format: zodTextFormat(Analise, 'analise_comentario') },
+        })
+        if (retry.output_parsed) {
+          analise = retry.output_parsed
+          tokensIn += retry.usage?.input_tokens ?? 0
+          tokensOut += retry.usage?.output_tokens ?? 0
+        }
+        aindaGenerica = !ancorada()
+      }
 
       await gravarAnalise({
         comentario: c,
         analise,
         promptId,
         contexto,
+        forcarRevisaoPorGenerica: aindaGenerica,
         uso: {
-          entrada: resposta.usage?.input_tokens ?? 0,
-          saida: resposta.usage?.output_tokens ?? 0,
+          entrada: tokensIn,
+          saida: tokensOut,
           latenciaMs: latencia,
         },
       })
 
       resultado.analisados += 1
-      resultado.custoEstimadoUSD += custoEstimado(
-        MODELO_PADRAO,
-        resposta.usage?.input_tokens ?? 0,
-        resposta.usage?.output_tokens ?? 0,
-      )
+      resultado.custoEstimadoUSD += custoEstimado(MODELO_PADRAO, tokensIn, tokensOut)
     } catch (e) {
       resultado.falhas += 1
       await db()
@@ -338,6 +377,31 @@ async function montarContexto(c: ComentarioParaAnalise) {
       .filter(Boolean)
   }
 
+  // Fatos estruturados do content DESTE media — fonte nº 1 da hierarquia.
+  // O vínculo é seed_media_id: estrutural, nunca por semelhança de texto,
+  // então endereço de um Reel jamais vaza para outro.
+  let fatos: Record<string, string | null> = {}
+  if (c.media_id) {
+    const { data: content } = await db()
+      .from('contents')
+      .select('business_name,address,neighborhood,city,price,opening_hours,instagram_handle,website,notes')
+      .eq('seed_media_id', c.media_id)
+      .maybeSingle()
+    if (content) {
+      fatos = {
+        estabelecimento: content.business_name,
+        endereco: content.address,
+        bairro: content.neighborhood,
+        cidade: content.city,
+        preco: content.price,
+        horario: content.opening_hours,
+        instagram: content.instagram_handle,
+        site: content.website,
+        observacoes: content.notes,
+      }
+    }
+  }
+
   const entrada = {
     comentario: c.text ?? '',
     username: c.username,
@@ -346,12 +410,49 @@ async function montarContexto(c: ComentarioParaAnalise) {
     publicadoEm: c.instagram_media?.published_at ?? null,
     historicoPessoa: historico,
     comentariosAnterioresTexto: anteriores,
+    fatosDoConteudo: fatos,
     nossasRespostasNoConteudo: nossasRespostas,
     // Sem intenção ainda (a IA decide); os exemplos cobrem o caso mais comum.
     exemplosDeTom: exemplosDeTom('elogio', c.id),
   }
 
   return { prompt: montarPromptUsuario(entrada), entrada }
+}
+
+/**
+ * "Esta resposta responde a ESTE comentário?" — o teste do §40.
+ *
+ * Para intenção factual, a resposta precisa carregar substância: um número
+ * (preço, altura de rua) ou pelo menos uma palavra de conteúdo vinda do
+ * comentário, da legenda ou dos fatos. "Que demais 😍" para "onde fica?"
+ * falha aqui mesmo que o modelo tenha decidido enviar.
+ */
+export function respostaAncoradaNoComentario(args: {
+  intent: string
+  resposta: string | null
+  comentario: string
+  legenda: string | null
+  fatos: Record<string, string | null>
+}): boolean {
+  const FACTUAIS = ['localizacao', 'preco', 'horario', 'duvida']
+  if (!FACTUAIS.includes(args.intent)) return true
+  if (!args.resposta) return true // sem resposta não há o que ancorar
+
+  const r = args.resposta.toLowerCase()
+  if (/\d/.test(r)) return true // número = fato concreto (preço, número da rua)
+
+  const norm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ')
+  const fonte = new Set(
+    norm(
+      `${args.comentario} ${args.legenda ?? ''} ${Object.values(args.fatos).filter(Boolean).join(' ')}`,
+    )
+      .split(/\s+/)
+      .filter((w) => w.length >= 4),
+  )
+  return norm(r)
+    .split(/\s+/)
+    .some((w) => w.length >= 4 && fonte.has(w))
 }
 
 /**
@@ -374,6 +475,7 @@ async function gravarAnalise(args: {
   analise: Analise
   promptId: string
   contexto: { prompt: string; entrada: unknown }
+  forcarRevisaoPorGenerica?: boolean
   uso: { entrada: number; saida: number; latenciaMs: number }
 }) {
   const { comentario: c, analise: a, promptId, contexto, uso } = args
@@ -393,7 +495,8 @@ async function gravarAnalise(args: {
     NUNCA_AUTOMATICO.includes(a.intencao as Intencao) ||
     a.risco === 'alto' ||
     a.exige_humano ||
-    esquiva
+    esquiva ||
+    Boolean(args.forcarRevisaoPorGenerica)
 
   const decisao = forcaRevisao ? 'HOLD_FOR_REVIEW' : DECISAO_DB[a.decisao]
   const motivo = forcaRevisao
@@ -449,7 +552,17 @@ async function gravarAnalise(args: {
 
   const acoes: Array<{ tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'; texto: string }> = []
   if (a.resposta_publica) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
-  if (a.mensagem_privada) acoes.push({ tipo: 'PRIVATE_REPLY', texto: a.mensagem_privada })
+
+  // O PORTÃO DA DM (§31-32, 46): DM sugerida SÓ para quem comprovadamente NÃO
+  // segue, sem DM nossa nos últimos 30 dias. FOLLOWS, UNKNOWN e DM recente
+  // viram registro SKIPPED com o motivo — visível na tela, nunca silencioso.
+  // A resposta pública acima é INDEPENDENTE deste portão.
+  let dmBloqueada: { motivo: string } | null = null
+  if (a.mensagem_privada) {
+    const gate = await gateDmParaIgsid(c.instagram_user_id)
+    if (gate.pode) acoes.push({ tipo: 'PRIVATE_REPLY', texto: a.mensagem_privada })
+    else dmBloqueada = { motivo: gate.motivo }
+  }
 
   if (acoes.length > 0) {
     const { error: erroAcoes } = await db()
@@ -512,6 +625,21 @@ async function gravarAnalise(args: {
         }
       }
     }
+  }
+
+  // A DM barrada pelo portão vira registro, não silêncio: a tela mostra
+  // "DM não sugerida — já segue / status desconhecido / DM recente".
+  if (dmBloqueada && a.mensagem_privada) {
+    await db().from('comment_actions').insert({
+      comment_id: c.id,
+      analysis_id: analiseSalva.id,
+      action_type: 'PRIVATE_REPLY',
+      mode: 'SHADOW',
+      status: 'SKIPPED',
+      generated_text: a.mensagem_privada,
+      reply_source: 'AI',
+      skip_reason: dmBloqueada.motivo,
+    })
   }
 
   await db()

@@ -32,7 +32,7 @@ export default async function Aprovacoes({
   let q = db()
     .from('comment_actions')
     .select(
-      'id,action_type,status,generated_text,final_text,edited_by,campaign_id,created_at,sent_at,rejected_reason,' +
+      'id,comment_id,action_type,status,generated_text,final_text,edited_by,campaign_id,created_at,sent_at,rejected_reason,' +
         'instagram_comments:comment_id(username,text,commented_at,instagram_media:media_id(caption,thumbnail_url)),' +
         'comment_analyses:analysis_id(intent,intent_confidence,decision_reason)',
     )
@@ -52,6 +52,28 @@ export default async function Aprovacoes({
     q,
     db().rpc('aprovacao_metricas'),
   ])
+
+  // DMs que o portão barrou, por comentário — para a tela dizer o PORQUÊ em
+  // vez de simplesmente não mostrar a DM.
+  const commentIds = [...new Set(((acoes ?? []) as Array<{ comment_id?: string }>).map((a) => a.comment_id).filter(Boolean))]
+  const { data: dmsBarradas } = commentIds.length
+    ? await db()
+        .from('comment_actions')
+        .select('comment_id,skip_reason')
+        .in('comment_id', commentIds as string[])
+        .eq('action_type', 'PRIVATE_REPLY')
+        .eq('status', 'SKIPPED')
+        .in('skip_reason', ['SKIPPED_ALREADY_FOLLOWING', 'FOLLOW_STATUS_UNKNOWN', 'SKIPPED_RECENT_DM'])
+    : { data: [] }
+  const MOTIVO_DM: Record<string, string> = {
+    SKIPPED_ALREADY_FOLLOWING: 'DM não sugerida — usuário já segue a página.',
+    FOLLOW_STATUS_UNKNOWN:
+      'DM não sugerida — status de follow indisponível (requer Advanced Access; App Review pendente).',
+    SKIPPED_RECENT_DM: 'DM não sugerida — pessoa recebeu DM nossa há menos de 30 dias.',
+  }
+  const dmInfoPorComentario = new Map(
+    (dmsBarradas ?? []).map((d) => [d.comment_id as string, MOTIVO_DM[d.skip_reason as string] ?? d.skip_reason as string]),
+  )
   if (error) throw new Error(`Falha ao carregar aprovações: ${error.message}`)
   const m = (Array.isArray(metricasRaw) ? metricasRaw[0] : metricasRaw) as Record<string, number> | null
 
@@ -59,6 +81,7 @@ export default async function Aprovacoes({
   // o shape real está garantido pela query acima.
   interface Linha {
     id: string
+    comment_id: string
     action_type: string
     status: string
     generated_text: string | null
@@ -97,6 +120,8 @@ export default async function Aprovacoes({
       confianca: an?.intent_confidence !== null && an?.intent_confidence !== undefined ? Number(an.intent_confidence) : null,
       motivo: an?.decision_reason ?? (a.campaign_id ? 'campanha de DM criada por você' : null),
       origem: a.campaign_id ? 'campanha' : 'novo',
+      dmInfo:
+        a.action_type === 'PUBLIC_REPLY' ? (dmInfoPorComentario.get(a.comment_id) ?? null) : null,
     }
   })
 

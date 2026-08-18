@@ -24,6 +24,8 @@ export interface ItemAprovacao {
   confianca: number | null
   motivo: string | null
   origem: 'novo' | 'campanha'
+  /** Por que a DM correspondente NÃO foi sugerida (segue / desconhecido / recente). */
+  dmInfo: string | null
 }
 
 export function AprovacoesLista({ itens }: { itens: ItemAprovacao[] }) {
@@ -260,6 +262,10 @@ function Item({
               <p className="mt-1 whitespace-pre-line text-[0.9375rem] leading-relaxed">{texto}</p>
             </div>
           )}
+
+          {item.dmInfo ? (
+            <p className="mt-2 text-[0.6875rem] text-ink-faint">{item.dmInfo}</p>
+          ) : null}
 
           {item.motivo ? (
             <details className="mt-2">
