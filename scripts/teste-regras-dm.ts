@@ -128,7 +128,6 @@ async function main() {
   const { data: acoesGeradas } = await db()
     .from('comment_actions')
     .select('action_type,status,skip_reason,instagram_comments:comment_id(instagram_comment_id)')
-    .like('skip_reason', '%', { referencedTable: undefined })
   const doTeste = (acoesGeradas ?? []).filter((a) => {
     const c = a.instagram_comments as unknown as { instagram_comment_id: string } | null
     return c?.instagram_comment_id?.startsWith('AUDIT4-')
