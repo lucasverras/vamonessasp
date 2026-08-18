@@ -69,7 +69,7 @@ export async function enviarAprovada(
     })
     .eq('id', acaoId)
     .in('status', ['PENDING_APPROVAL', 'QUEUED'])
-    .select('id,comment_id,action_type,generated_text,final_text,media_id')
+    .select('id,comment_id,action_type,generated_text,final_text,media_id,reply_source')
     .maybeSingle()
 
   if (!claimed) return { ok: false, status: 'JA_PROCESSADA', detalhe: 'Já processado.' }
@@ -113,7 +113,9 @@ export async function enviarAprovada(
       await devolver({ status: 'SKIPPED', skip_reason: 'COMENTARIO_APAGADO' })
       return { ok: false, status: 'INELEGIVEL', detalhe: 'comentário não existe mais' }
     }
-    const recusa = validarRespostaPublica(texto, [])
+    const recusa = validarRespostaPublica(texto, [], {
+      autorHumano: claimed.reply_source === 'HUMAN',
+    })
     if (recusa) {
       await devolver({ status: 'PENDING_APPROVAL', skip_reason: `validação: ${recusa}` })
       return { ok: false, status: 'VALIDACAO', detalhe: recusa }

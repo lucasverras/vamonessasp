@@ -32,6 +32,7 @@ const cfgBase: ConfigAutomacao = {
   auto_approve_intents: [],
   never_auto_intents: ['critica', 'situacao_delicada', 'oportunidade_comercial', 'spam'],
   min_confidence_for_auto: 0.85,
+  dm_template: 'template de teste',
 }
 const depois = '2026-08-17T12:00:00Z'
 const antes = '2026-08-10T12:00:00Z'

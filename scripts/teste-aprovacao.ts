@@ -27,6 +27,7 @@ const cfg: ConfigAutomacao = {
   auto_approve_intents: [],
   never_auto_intents: ['critica', 'situacao_delicada', 'oportunidade_comercial', 'spam'],
   min_confidence_for_auto: 0.85,
+  dm_template: 'template de teste',
 }
 const base = {
   cfg,

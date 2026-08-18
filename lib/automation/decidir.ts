@@ -32,13 +32,15 @@ export interface ConfigAutomacao {
   auto_approve_intents: string[]
   never_auto_intents: string[]
   min_confidence_for_auto: number
+  /** Template institucional da DM (objetivo: follow). Editável no painel. */
+  dm_template: string
 }
 
 export async function lerConfigAutomacao(): Promise<ConfigAutomacao | null> {
   const { data } = await db()
     .from('automation_settings')
     .select(
-      'reply_mode,kill_switch,delay_min_seconds,delay_max_seconds,reply_praise,reply_known_questions,reply_mentions,automation_started_at,auto_approve_intents,never_auto_intents,min_confidence_for_auto',
+      'reply_mode,kill_switch,delay_min_seconds,delay_max_seconds,reply_praise,reply_known_questions,reply_mentions,automation_started_at,auto_approve_intents,never_auto_intents,min_confidence_for_auto,dm_template',
     )
     .eq('id', true)
     .single()

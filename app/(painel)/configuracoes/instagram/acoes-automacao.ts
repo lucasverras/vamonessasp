@@ -50,6 +50,24 @@ export async function definirModoAutomacao(modo: 'OFF' | 'DRY_RUN' | 'LIVE'): Pr
   return { ok: true }
 }
 
+/** Template institucional da DM (objetivo: follow). ADMIN. */
+export async function definirTemplateDm(form: FormData): Promise<ResultadoCfg> {
+  try {
+    await exigirAdmin('editar o template da DM')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const texto = String(form.get('dm_template') ?? '').trim()
+  if (texto.length < 10) return { ok: false, erro: 'Template curto demais.' }
+  const { error } = await db()
+    .from('automation_settings')
+    .update({ dm_template: texto, updated_at: new Date().toISOString() })
+    .eq('id', true)
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/configuracoes/instagram')
+  return { ok: true }
+}
+
 export async function definirCadencia(form: FormData): Promise<ResultadoCfg> {
   try {
     await exigirAdmin('mudar a cadência da automação')

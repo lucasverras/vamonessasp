@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagram/account'
 import { getAutomacao } from '@/lib/campaigns/create'
-import { definirCadencia, definirModoAutomacao } from './acoes-automacao'
+import { definirCadencia, definirModoAutomacao, definirTemplateDm } from './acoes-automacao'
 import { alternarKillSwitch } from '../../comentarios/acoes'
 
 export const dynamic = 'force-dynamic'
@@ -323,6 +323,34 @@ export default async function InstagramSettingsPage({
           oportunidades comerciais, spam e qualquer pergunta cuja resposta não esteja na legenda ou
           no cadastro — esses caem na fila de revisão para você.
         </p>
+
+        {/* Público conversa; a DM pede follow — e o texto dela é ESTE template,
+            o mesmo para todos, de propósito. */}
+        <form
+          action={async (form: FormData) => {
+            'use server'
+            await definirTemplateDm(form)
+          }}
+          className="mt-6 border-t border-line-soft pt-5"
+        >
+          <label className="block">
+            <span className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+              Template da Private Reply (objetivo: follow — nunca usado em resposta pública)
+            </span>
+            <textarea
+              name="dm_template"
+              rows={5}
+              defaultValue={automacao?.dm_template ?? ''}
+              className="mt-1.5 w-full rounded-lg border border-line bg-void px-3 py-2.5 text-[0.875rem] leading-relaxed outline-none focus:border-accent"
+            />
+          </label>
+          <button
+            type="submit"
+            className="mt-2 rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px"
+          >
+            Salvar template
+          </button>
+        </form>
       </section>
 
       <section className="mt-8">

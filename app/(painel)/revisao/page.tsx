@@ -1,6 +1,8 @@
 import { AlertTriangle, Bot, Lock, MessageSquare, Send } from 'lucide-react'
 import { db } from '@/lib/db'
 import { AcaoRevisao, IntencaoAutomatica } from '@/components/revisao-item'
+import { PrecisaDeVoce } from '@/components/precisa-de-voce'
+import { montarFilaPrecisaDeVoce, type LinhaFila } from './dados'
 import { INTENCOES, NUNCA_AUTOMATICO } from '@/lib/ai/prompt'
 import { custoEstimado } from '@/lib/ai/analise'
 
@@ -70,11 +72,15 @@ export default async function Revisao() {
     .eq('analysis_status', 'PENDING')
     .eq('is_from_account', false)
 
-  // A fila "precisa de você": ações que a automação decidiu NÃO tomar sozinha.
-  const { count: precisaDeVoce } = await db()
-    .from('comment_actions')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'PENDING_APPROVAL')
+  // A fila "precisa de você": HOLDs abertos, já priorizados no banco
+  // (pergunta > reclamação > resto; mais antigo primeiro).
+  const [{ data: filaRaw }, { data: taxaRaw }] = await Promise.all([
+    db().rpc('fila_precisa_de_voce', { limite: 30 }),
+    db().rpc('taxa_automacao'),
+  ])
+  const taxa = (Array.isArray(taxaRaw) ? taxaRaw[0] : taxaRaw) as Record<string, number> | null
+
+  const fila = montarFilaPrecisaDeVoce((filaRaw ?? []) as LinhaFila[])
 
   // Cada análise guarda o modelo que a produziu, então o custo é correto mesmo
   // depois de trocar de modelo no meio do caminho.
@@ -113,25 +119,43 @@ export default async function Revisao() {
         </dl>
       </header>
 
-      {(precisaDeVoce ?? 0) > 0 ? (
-        <div
-          className="rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/40 bg-warn-wash/50 px-5 py-4"
-          style={{ animationDelay: '40ms' }}
-        >
-          <div>
-            <p className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">
-              Precisa de você
-            </p>
-            <p className="mt-0.5 text-[0.8125rem] text-ink-soft">
-              {precisaDeVoce} {precisaDeVoce === 1 ? 'resposta aguarda' : 'respostas aguardam'} sua
-              decisão — a automação parou de propósito: crítica, falta de informação ou baixa
-              confiança.
-            </p>
+      {fila.length > 0 ? (
+        <section className="rise mt-6" style={{ animationDelay: '40ms' }}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-[1.25rem] font-bold tracking-[-0.02em]">
+                Precisa de você
+              </h2>
+              <p className="mt-0.5 text-[0.8125rem] text-ink-soft">
+                {fila.length} comentário{fila.length === 1 ? '' : 's'} aguardando sua resposta — a
+                IA parou de propósito. Escreva, publique, e decida a DM. Isto é o produto
+                funcionando, não erro.
+              </p>
+            </div>
+            <span className="tnum grid size-10 shrink-0 place-items-center rounded-full bg-warn text-[1rem] font-bold text-void">
+              {fila.length}
+            </span>
           </div>
-          <span className="tnum grid size-10 shrink-0 place-items-center rounded-full bg-warn text-[1rem] font-bold text-void">
-            {precisaDeVoce}
-          </span>
-        </div>
+          <PrecisaDeVoce itens={fila} />
+        </section>
+      ) : null}
+
+      {taxa ? (
+        <p className="rise mt-5 text-[0.75rem] text-ink-faint" style={{ animationDelay: '55ms' }}>
+          Automação até agora: {Number(taxa.comentarios_recebidos)} comentários ·{' '}
+          {Number(taxa.respondidos_automaticamente)} automáticos ·{' '}
+          {Number(taxa.precisaram_de_humano)} precisaram de humano ·{' '}
+          {Number(taxa.ignorados)} ignorados · {Number(taxa.falharam)} falharam
+          {Number(taxa.respondidos_automaticamente) + Number(taxa.precisaram_de_humano) > 0
+            ? ` — automação efetiva ${(
+                (Number(taxa.respondidos_automaticamente) * 100) /
+                (Number(taxa.respondidos_automaticamente) + Number(taxa.precisaram_de_humano))
+              )
+                .toFixed(1)
+                .replace('.', ',')}%`
+            : ''}
+          . Melhor 80% certos que 99% ruins.
+        </p>
       ) : null}
 
       {cfg?.shadow_mode ? (

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
 import { gateDmParaIgsid } from '../instagram/follow-status'
-import { exemplosDeTom, pareceRespostaEsquiva } from './respostas'
+import { contemCtaDeFollow, exemplosDeTom, pareceRespostaEsquiva } from './respostas'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -74,6 +74,14 @@ const Analise = z.object({
     'descartar',
   ]),
   decisao_motivo: z.string(),
+  /** Código legível por máquina: MISSING_INFORMATION:parking,
+   *  PRICE_NOT_AVAILABLE, AMBIGUOUS_QUESTION, COMPLAINT, SENSITIVE,
+   *  LOW_CONFIDENCE, CONFLICTING_SOURCES, OK. */
+  decisao_motivo_codigo: z.string(),
+  /** Inventário honesto do contexto: o que EXISTIA (endereco, preco, legenda…) */
+  fatos_disponiveis: z.array(z.string()),
+  /** …e o que FALTOU para responder (parking, preco_domingo…). */
+  fatos_faltando: z.array(z.string()),
 })
 
 export type Analise = z.infer<typeof Analise>
@@ -269,18 +277,24 @@ export async function analisarPendentes(limite = 20) {
           legenda: entrada.legenda,
           fatos: entrada.fatosDoConteudo ?? {},
         })
+      // Dois vetos estruturais na resposta pública, com UMA regeneração:
+      // genérica demais para pergunta factual, ou CTA de follow (proibição
+      // absoluta: público conversa, DM pede follow).
       let aindaGenerica = false
-      if (!ancorada()) {
+      const problema = () =>
+        !ancorada()
+          ? 'Sua resposta anterior era genérica demais — serviria para qualquer comentário. Reescreva ancorando no que ESTA pessoa perguntou, usando o fato concreto do contexto. Se o fato não existir no contexto, a decisão é aguardar_revisao.'
+          : contemCtaDeFollow(analise!.resposta_publica)
+            ? 'Sua resposta pública pede follow — isso é PROIBIDO em público (o convite pertence à DM, que é template do sistema). Reescreva a resposta pública apenas conversando, sem qualquer pedido de seguir.'
+            : null
+      const instrucaoRetry = problema()
+      if (instrucaoRetry) {
         const retry = await openai().responses.parse({
           model: MODELO_PADRAO,
           instructions: SYSTEM_PROMPT,
           input: [
             { role: 'user', content: contexto.prompt },
-            {
-              role: 'user',
-              content:
-                'Sua resposta anterior era genérica demais — serviria para qualquer comentário. Reescreva ancorando no que ESTA pessoa perguntou, usando o fato concreto do contexto. Se o fato não existir no contexto, a decisão é aguardar_revisao.',
-            },
+            { role: 'user', content: instrucaoRetry },
           ],
           text: { format: zodTextFormat(Analise, 'analise_comentario') },
         })
@@ -289,7 +303,7 @@ export async function analisarPendentes(limite = 20) {
           tokensIn += retry.usage?.input_tokens ?? 0
           tokensOut += retry.usage?.output_tokens ?? 0
         }
-        aindaGenerica = !ancorada()
+        aindaGenerica = !ancorada() || contemCtaDeFollow(analise!.resposta_publica)
       }
 
       await gravarAnalise({
@@ -523,6 +537,9 @@ async function gravarAnalise(args: {
       suggested_private_reply: a.mensagem_privada,
       cta_strategy: a.cta_estrategia,
       cta_included: Boolean(a.mensagem_privada && a.cta_estrategia),
+      decision_reason_code: a.decisao_motivo_codigo || null,
+      facts_available: a.fatos_disponiveis,
+      facts_missing: a.fatos_faltando,
       decision: decisao,
       decision_reason: motivo,
       input_snapshot: contexto as never,
@@ -553,14 +570,20 @@ async function gravarAnalise(args: {
   const acoes: Array<{ tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'; texto: string }> = []
   if (a.resposta_publica) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
 
-  // O PORTÃO DA DM (§31-32, 46): DM sugerida SÓ para quem comprovadamente NÃO
-  // segue, sem DM nossa nos últimos 30 dias. FOLLOWS, UNKNOWN e DM recente
-  // viram registro SKIPPED com o motivo — visível na tela, nunca silencioso.
-  // A resposta pública acima é INDEPENDENTE deste portão.
+  // A DM agora é TEMPLATE do sistema (objetivo: follow) — o modelo só decide
+  // SE ela cabe (enviar_ambas/apenas_privada, fora de revisão). O texto vem
+  // de automation_settings.dm_template, congelado na ação.
+  //
+  // O PORTÃO (§31-32, 46) continua: só quem comprovadamente NÃO segue, sem DM
+  // nossa em 30 dias. FOLLOWS/UNKNOWN/recente viram registro SKIPPED com o
+  // motivo — visível na tela, nunca silencioso. HOLD segura a DM junto.
+  const dmCabe =
+    !forcaRevisao && (a.decisao === 'enviar_ambas' || a.decisao === 'apenas_privada')
+  const textoDm = (a.mensagem_privada ?? cfg?.dm_template ?? '').trim()
   let dmBloqueada: { motivo: string } | null = null
-  if (a.mensagem_privada) {
+  if (dmCabe && textoDm) {
     const gate = await gateDmParaIgsid(c.instagram_user_id)
-    if (gate.pode) acoes.push({ tipo: 'PRIVATE_REPLY', texto: a.mensagem_privada })
+    if (gate.pode) acoes.push({ tipo: 'PRIVATE_REPLY', texto: textoDm })
     else dmBloqueada = { motivo: gate.motivo }
   }
 
@@ -629,14 +652,14 @@ async function gravarAnalise(args: {
 
   // A DM barrada pelo portão vira registro, não silêncio: a tela mostra
   // "DM não sugerida — já segue / status desconhecido / DM recente".
-  if (dmBloqueada && a.mensagem_privada) {
+  if (dmBloqueada) {
     await db().from('comment_actions').insert({
       comment_id: c.id,
       analysis_id: analiseSalva.id,
       action_type: 'PRIVATE_REPLY',
       mode: 'SHADOW',
       status: 'SKIPPED',
-      generated_text: a.mensagem_privada,
+      generated_text: textoDm,
       reply_source: 'AI',
       skip_reason: dmBloqueada.motivo,
     })

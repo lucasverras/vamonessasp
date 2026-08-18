@@ -206,3 +206,169 @@ export async function alternarIntencaoAutomatica(
   revalidatePath('/revisao')
   return { ok: true }
 }
+
+// ─────────────────────────────── fila "Precisa de você" (fallback humano 12.1)
+
+import { enviarAprovada } from '@/lib/automation/aprovar'
+import { lerConfigAutomacao } from '@/lib/automation/decidir'
+
+export interface ResultadoHumano {
+  ok: boolean
+  detalhe: string
+  dmDetalhe?: string
+}
+
+/**
+ * Você responde um comentário que a IA segurou. O sistema publica SUA resposta
+ * (reply_source HUMAN — as regras de estilo da automação não se aplicam ao seu
+ * texto) e, se você marcou, envia também a DM de template.
+ *
+ * A DM aqui é AUTORIZAÇÃO HUMANA EXPLÍCITA: passa por cima do
+ * FOLLOW_STATUS_UNKNOWN (decisão sua, registrada), mas NUNCA por cima da
+ * constraint pessoa+conteúdo nem do kill switch.
+ */
+export async function responderHumano(
+  analysisId: string,
+  commentId: string,
+  texto: string,
+  enviarDm: boolean,
+): Promise<ResultadoHumano> {
+  let sessao
+  try {
+    sessao = await exigirSessao()
+  } catch (e) {
+    return { ok: false, detalhe: e instanceof Error ? e.message : 'Sessão expirada.' }
+  }
+  const t = texto.trim()
+  if (t.length < 1) return { ok: false, detalhe: 'Escreva a resposta.' }
+
+  const { data: c } = await db()
+    .from('instagram_comments')
+    .select('id,instagram_user_id,media_id')
+    .eq('id', commentId)
+    .maybeSingle()
+  if (!c) return { ok: false, detalhe: 'Comentário não encontrado.' }
+
+  // Cria a ação PÚBLICA humana e envia na hora pela rota de aprovação
+  // (kill switch, claim atômico, revalidação — tudo igual).
+  const { data: acao, error } = await db()
+    .from('comment_actions')
+    .insert({
+      comment_id: c.id,
+      analysis_id: analysisId,
+      action_type: 'PUBLIC_REPLY',
+      mode: 'MANUAL',
+      status: 'PENDING_APPROVAL',
+      generated_text: t,
+      final_text: t,
+      reply_source: 'HUMAN',
+      responded_by: sessao.usuario,
+      instagram_user_id: c.instagram_user_id,
+      media_id: c.media_id,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error?.code === '23505') return { ok: false, detalhe: 'Este comentário já tem resposta em andamento.' }
+  if (error || !acao) return { ok: false, detalhe: error?.message ?? 'Falha ao criar ação.' }
+
+  const envio = await enviarAprovada(acao.id, sessao.usuario, t)
+  if (!envio.ok) {
+    return { ok: false, detalhe: envio.detalhe ?? envio.status }
+  }
+
+  await db()
+    .from('comment_analyses')
+    .update({ review_outcome: 'HUMAN_REPLIED', reviewed_by: sessao.usuario, reviewed_at: new Date().toISOString() })
+    .eq('id', analysisId)
+
+  let dmDetalhe: string | undefined
+  if (enviarDm) {
+    const cfg = await lerConfigAutomacao()
+    const template = (cfg?.dm_template ?? '').trim()
+    if (!template) dmDetalhe = 'DM não enviada: template vazio.'
+    else {
+      const { data: dm, error: e2 } = await db()
+        .from('comment_actions')
+        .insert({
+          comment_id: c.id,
+          analysis_id: analysisId,
+          action_type: 'PRIVATE_REPLY',
+          mode: 'MANUAL',
+          status: 'PENDING_APPROVAL',
+          generated_text: template,
+          final_text: template,
+          reply_source: 'HUMAN',
+          responded_by: sessao.usuario,
+          instagram_user_id: c.instagram_user_id,
+          media_id: c.media_id,
+        })
+        .select('id')
+        .maybeSingle()
+      if (e2?.code === '23505') dmDetalhe = 'DM não enviada: pessoa já tem DM deste conteúdo.'
+      else if (e2 || !dm) dmDetalhe = `DM não criada: ${e2?.message ?? 'falha'}`
+      else {
+        const envioDm = await enviarAprovada(dm.id, sessao.usuario)
+        dmDetalhe = envioDm.ok ? 'DM enviada.' : `DM: ${envioDm.detalhe ?? envioDm.status}`
+      }
+    }
+  }
+
+  revalidatePath('/revisao')
+  revalidatePath('/aprovacoes')
+  return { ok: true, detalhe: 'Resposta publicada.', dmDetalhe }
+}
+
+/** "Não responder": decisão consciente, registrada — não é pendência eterna. */
+export async function naoResponder(analysisId: string): Promise<Resultado> {
+  const sessao = await exigirSessao()
+  const { error } = await db()
+    .from('comment_analyses')
+    .update({ review_outcome: 'IGNORED', reviewed_by: sessao.usuario, reviewed_at: new Date().toISOString() })
+    .eq('id', analysisId)
+    .is('review_outcome', null)
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/revisao')
+  return { ok: true }
+}
+
+const CAMPOS_FATO = ['address', 'price', 'opening_hours', 'notes'] as const
+type CampoFato = (typeof CAMPOS_FATO)[number]
+
+/**
+ * "Salvar como informação do conteúdo" — SÓ com sua confirmação explícita.
+ * Sua resposta nunca vira fato reutilizável sozinha.
+ */
+export async function salvarFatoNoConteudo(
+  mediaId: string,
+  campo: string,
+  valor: string,
+): Promise<Resultado> {
+  const sessao = await exigirSessao()
+  if (!CAMPOS_FATO.includes(campo as CampoFato)) return { ok: false, erro: 'Campo inválido.' }
+  const v = valor.trim()
+  if (!v) return { ok: false, erro: 'Valor vazio.' }
+
+  const { data: existente } = await db()
+    .from('contents')
+    .select('id,notes')
+    .eq('seed_media_id', mediaId)
+    .maybeSingle()
+
+  // notes acumula ("Estacionamento: valet na porta"); os demais substituem.
+  const patch: Record<string, string> =
+    campo === 'notes'
+      ? { notes: existente?.notes ? `${existente.notes}\n${v}` : v }
+      : { [campo]: v }
+
+  const { error } = existente
+    ? await db().from('contents').update(patch).eq('id', existente.id)
+    : await db()
+        .from('contents')
+        .insert({ seed_media_id: mediaId, title: 'cadastrado na revisão', ...patch })
+  if (error) return { ok: false, erro: error.message }
+
+  console.log(`[fatos] ${sessao.usuario} salvou ${campo} no conteúdo ${mediaId.slice(0, 8)}…`)
+  revalidatePath('/revisao')
+  return { ok: true }
+}

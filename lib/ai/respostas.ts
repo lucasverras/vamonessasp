@@ -96,16 +96,44 @@ export function pareceRespostaEsquiva(texto: string | null): boolean {
 }
 
 /**
+ * CTA de follow em RESPOSTA PÚBLICA é proibido — a regra absoluta do produto:
+ * público = conversa, DM = follow. Detecta o pedido de acompanhamento
+ * ("segue a gente", "não esquece de seguir", "follow"), sem punir usos
+ * legítimos das palavras ("seguindo a dica", "em seguida").
+ */
+export function contemCtaDeFollow(texto: string | null): boolean {
+  if (!texto) return false
+  const t = texto.toLowerCase()
+  return (
+    /\bsegue\s+(a gente|o @|n[óo]s|o vamo|nosso)/i.test(t) ||
+    /\b(n[ãa]o (esquece|deixa) de seguir|bora seguir|j[áa] segue\b)/i.test(t) ||
+    /\bseguir\s+(a gente|o @|o perfil|o vamo|nosso)/i.test(t) ||
+    /\bfollow\b/i.test(t) ||
+    /\bacompanha\s+(a gente|o @|o vamo|nosso)/i.test(t) ||
+    /@vamonessasp\b.*\b(pra n[ãa]o perder|para n[ãa]o perder|seguir|segue)/i.test(t)
+  )
+}
+
+/**
  * Validação final antes de publicar — a última linha de defesa, estrutural e
  * barata (sem IA). Devolve o motivo da recusa, ou null para aprovado.
  */
 export function validarRespostaPublica(
   texto: string,
   respostasRecentesNoMedia: string[],
+  opcoes?: {
+    /** Resposta ESCRITA POR HUMANO: as regras de estilo da automação (CTA,
+     *  tom) não se aplicam — o humano decide o próprio texto. Comprimento e
+     *  vazio continuam valendo, porque são limite da plataforma/bom senso. */
+    autorHumano?: boolean
+  },
 ): string | null {
   const t = texto.trim()
   if (!t) return 'VAZIA'
   if (t.length > 240) return 'LONGA_DEMAIS'
+  if (opcoes?.autorHumano) return null
+  // A regra absoluta: pedido de follow não sai em comentário público, nunca.
+  if (contemCtaDeFollow(t)) return 'CTA_DE_FOLLOW_EM_PUBLICO'
   // Menção a IA/bot quebra o disfarce e a confiança.
   if (/\b(ia\b|intelig[êe]ncia artificial|assistente virtual|bot\b|chatbot)/i.test(t)) {
     return 'MENCIONA_IA'
