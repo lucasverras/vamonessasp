@@ -247,6 +247,18 @@ export async function assinarWebhooks() {
       verify_token: env.webhookVerifyToken,
       include_values: 'true',
     })
+
+    // OBJETO PAGE é um registro SEPARADO no nível do app — o subscribed_apps
+    // da Página sozinho não entrega nada. Ficou faltando e o resultado foi
+    // zero eventos de Facebook apesar da assinatura da Página estar certa
+    // (diagnóstico de 19/08: comentários reais aconteciam e nada chegava).
+    resultados.objetoPage = await metaPost(`${env.metaAppId}/subscriptions`, appToken, {
+      object: 'page',
+      callback_url: callbacks.webhook,
+      fields: 'feed',
+      verify_token: env.webhookVerifyToken,
+      include_values: 'true',
+    })
   } catch (e) {
     resultados.objetoInstagram = { erro: e instanceof Error ? e.message : String(e) }
   }
