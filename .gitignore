@@ -13,3 +13,7 @@ tsconfig.tsbuildinfo
 
 # bloco de variáveis para colar na Vercel — contém segredos
 vercel-env.txt
+
+# exportações de dados pessoais nunca entram no repo
+instagram-*.zip
+followers_*.json
