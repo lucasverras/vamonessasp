@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ArrowUpRight, Play } from 'lucide-react'
 import { GrowthChart } from '@/components/growth-chart'
-import { resumoOportunidade } from '@/lib/analytics/comentarios'
+import { db } from '@/lib/db'
 import { getFunnelToday, getOverview, getTopContent } from '@/lib/analytics/overview'
 
 export const dynamic = 'force-dynamic'
@@ -19,12 +19,15 @@ function compacto(n: number | null) {
 }
 
 export default async function VisaoGeral() {
-  const [{ conta, kpis, serieDiaria }, top, funil, oportunidade] = await Promise.all([
+  const [{ conta, kpis, serieDiaria }, top, funil, { data: aquisicaoRaw }] = await Promise.all([
     getOverview(30),
     getTopContent(6),
     getFunnelToday(),
-    resumoOportunidade(),
+    db().rpc('central_aquisicao_kpis'),
   ])
+  const aquisicao = (Array.isArray(aquisicaoRaw) ? aquisicaoRaw[0] : aquisicaoRaw) as
+    | Record<string, number>
+    | null
 
   const [seguidores, novos, ...resto] = kpis
 
@@ -108,40 +111,56 @@ export default async function VisaoGeral() {
         ))}
       </section>
 
-      {/* O card operacional: quem pode receber DM AGORA, já limpo no banco —
-          sem duplicados, sem quem segue, sem DM < 60 dias, sem expirados. */}
-      {oportunidade.pessoas > 0 ? (
-        <section
-          className="rise mt-6 flex flex-wrap items-center justify-between gap-4 rounded-card border border-accent/25 bg-accent-wash/40 px-5 py-4"
-          style={{ animationDelay: '140ms' }}
-        >
-          <div>
-            <p className="text-[0.6875rem] font-medium uppercase tracking-[0.1em] text-accent">
-              Oportunidades
-            </p>
-            <p className="mt-1 text-[0.9375rem]">
-              <strong className="tnum font-display text-2xl font-semibold">
-                {nf(oportunidade.pessoas)}
-              </strong>{' '}
-              pessoas elegíveis agora
-              <span className="text-[0.8125rem] text-ink-faint">
-                {' '}· {nf(oportunidade.comentarios)} comentários
-                {oportunidade.mencoes > 0 ? ` · ${nf(oportunidade.mencoes)} menções` : ''}
-                {oportunidade.removidas + oportunidade.duplicatasColapsadas > 0
-                  ? ` · ${nf(oportunidade.removidas + oportunidade.duplicatasColapsadas)} removidas automaticamente`
-                  : ''}
-              </span>
-            </p>
-          </div>
+      {/* DOIS fluxos, DOIS cards (spec Parte 18): AQUISIÇÃO (DM) nunca se
+          mistura com COMENTÁRIOS (resposta pública). */}
+      <section className="rise mt-6 grid gap-3 sm:grid-cols-2" style={{ animationDelay: '140ms' }}>
+        <div className="flex flex-col rounded-card border border-accent/25 bg-accent-wash/30 p-5">
+          <p className="text-[0.6875rem] font-medium uppercase tracking-[0.1em] text-accent">
+            Aquisição
+          </p>
+          <dl className="tnum mt-2 flex gap-5 text-[0.875rem]">
+            <div>
+              <dt className="text-[0.625rem] uppercase text-ink-faint">Qualificados</dt>
+              <dd className="font-display text-2xl font-semibold">{nf(aquisicao?.qualificados ?? 0)}</dd>
+            </div>
+            <div>
+              <dt className="text-[0.625rem] uppercase text-ink-faint">Enviados</dt>
+              <dd className="font-display text-2xl font-semibold">{nf(aquisicao?.enviados ?? 0)}</dd>
+            </div>
+            <div>
+              <dt className="text-[0.625rem] uppercase text-ink-faint">Negados</dt>
+              <dd className="font-display text-2xl font-semibold">{nf(aquisicao?.negados ?? 0)}</dd>
+            </div>
+          </dl>
           <Link
-            href="/comentarios"
-            className="group inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[0.8125rem] font-semibold text-void transition-transform hover:-translate-y-px"
+            href="/aquisicao"
+            className="group mt-auto inline-flex items-center gap-2 pt-3 text-[0.8125rem] font-semibold text-accent"
           >
-            Trabalhar {nf(oportunidade.pessoas)}
+            Abrir aquisição
             <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
           </Link>
-        </section>
-      ) : null}
+        </div>
+
+        <div className="flex flex-col rounded-card border border-line bg-canvas p-5">
+          <p className="text-[0.6875rem] font-medium uppercase tracking-[0.1em] text-ink-faint">
+            Comentários
+          </p>
+          <p className="mt-2 text-[0.9375rem]">
+            <strong className="tnum font-display text-2xl font-semibold">{nf(funil.precisaDeVoce)}</strong>{' '}
+            aguardando sua aprovação
+          </p>
+          <p className="tnum mt-1 text-[0.8125rem] text-ink-faint">
+            {nf(funil.aprovadasHoje)} aprovados hoje
+          </p>
+          <Link
+            href="/aprovacoes"
+            className="group mt-auto inline-flex items-center gap-2 pt-3 text-[0.8125rem] font-semibold text-ink-soft"
+          >
+            Revisar comentários
+            <ArrowUpRight className="size-4 stroke-[2.25] transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </div>
+      </section>
 
       <section className="rise mt-10" style={{ animationDelay: '160ms' }}>
         <div className="mb-4 flex items-baseline justify-between gap-4">

@@ -20,12 +20,13 @@ import { getConnectedAccount } from '@/lib/instagram/account'
 
 const NAV = [
   { href: '/', label: 'Visão geral', icon: LayoutGrid },
+  { href: '/aquisicao', label: 'Aquisição', icon: Send },
   { href: '/aprovacoes', label: 'Aprovações', icon: CheckCheck },
   { href: '/conteudos', label: 'Conteúdos', icon: BarChart3 },
   { href: '/crescimento', label: 'Crescimento', icon: TrendingUp },
   { href: '/comentarios', label: 'Comentários', icon: MessageSquare },
   { href: '/revisao', label: 'Revisão IA', icon: Bot },
-  { href: '/campanhas', label: 'Campanhas', icon: Send },
+  { href: '/campanhas', label: 'Campanhas', icon: BarChart3 },
   { href: '/horarios', label: 'Horários', icon: Clock4 },
   { href: '/frequencia', label: 'Frequência', icon: CalendarRange },
 ]
