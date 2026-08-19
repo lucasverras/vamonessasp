@@ -82,6 +82,16 @@ export async function criarCampanha(args: {
 
   if (error) throw new Error(`Falha ao criar campanha: ${error.message}`)
 
+  // No modo APPROVAL_REQUIRED, QUEUED ficaria parado para sempre (o worker
+  // não reivindica nada fora de LIVE). A campanha nasce como PENDING_APPROVAL
+  // e você aprova em lote na tela de Aprovações — sem fila fantasma.
+  const { data: cfgModo } = await db()
+    .from('automation_settings')
+    .select('reply_mode')
+    .eq('id', true)
+    .single()
+  const statusInicial = cfgModo?.reply_mode === 'LIVE' ? 'QUEUED' : 'PENDING_APPROVAL'
+
   if (aprovados.length > 0) {
     const { error: erroDest } = await db()
       .from('comment_actions')
@@ -91,7 +101,7 @@ export async function criarCampanha(args: {
           campaign_id: campanha.id,
           action_type: 'PRIVATE_REPLY' as const,
           mode: 'MANUAL' as const,
-          status: 'QUEUED' as const,
+          status: statusInicial,
           generated_text: mensagem,
           final_text: mensagem,
           // As colunas da constraint pessoa+conteúdo. Sem elas a unique não

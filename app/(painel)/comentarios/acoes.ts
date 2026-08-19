@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { exigirAdmin } from '@/lib/auth/guarda'
+import { db } from '@/lib/db'
 import { criarCampanha, definirKillSwitch, previaCampanha } from '@/lib/campaigns/create'
 
 /**
@@ -76,4 +77,37 @@ export async function previaSelecao(idsCsv: string): Promise<{
     elegiveis: r.elegiveis,
     removidos: Object.entries(r.removidosPorMotivo).sort((a, b) => b[1] - a[1]),
   }
+}
+
+/** Limpa da lista quem repete: mantém o comentário mais recente de cada
+ *  pessoa, marca o resto SKIPPED_DUPLICATE. Nada é apagado. ADMIN. */
+export async function limparDuplicadosAction(): Promise<{ ok: boolean; n?: number; erro?: string }> {
+  try {
+    await exigirAdmin('limpar duplicados')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const { data, error } = await db().rpc('limpar_duplicados')
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/comentarios')
+  return { ok: true, n: Number(data ?? 0) }
+}
+
+/** Limpa da lista quem já foi atendido: DM dentro da janela ou já segue. ADMIN. */
+export async function limparJaAtendidosAction(): Promise<{
+  ok: boolean
+  dmRecente?: number
+  jaSegue?: number
+  erro?: string
+}> {
+  try {
+    await exigirAdmin('limpar já atendidos')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const { data, error } = await db().rpc('limpar_ja_atendidos')
+  if (error) return { ok: false, erro: error.message }
+  const r = (Array.isArray(data) ? data[0] : data) as { dm_recente: number; ja_segue: number } | null
+  revalidatePath('/comentarios')
+  return { ok: true, dmRecente: Number(r?.dm_recente ?? 0), jaSegue: Number(r?.ja_segue ?? 0) }
 }

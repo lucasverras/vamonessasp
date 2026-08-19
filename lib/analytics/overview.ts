@@ -22,7 +22,7 @@ export async function getOverview(days = 30) {
   const desde = new Date(Date.now() - days * dia).toISOString()
   const anterior = new Date(Date.now() - days * 2 * dia).toISOString()
 
-  const [conta, snapshots, midias, diarios] = await Promise.all([
+  const [conta, snapshots, midias, diarios, totaisR] = await Promise.all([
     db()
       .from('instagram_accounts')
       .select('id,username,name,profile_picture_url,followers_count,media_count,last_sync_at')
@@ -44,15 +44,13 @@ export async function getOverview(days = 30) {
       .select('date,new_followers,is_provisional')
       .gte('date', new Date(Date.now() - days * 2 * dia).toISOString().slice(0, 10))
       .order('date', { ascending: true }),
+    // Somatório das métricas (snapshot MAIS RECENTE de cada mídia). Estava
+    // FORA do Promise.all — um await sequencial gratuito em toda carga da Home.
+    db().rpc('overview_media_totals', { desde_param: desde }),
   ])
 
-  // Somatório das métricas de conteúdo no período: usa o snapshot MAIS RECENTE
-  // de cada mídia, nunca a soma de todos os snapshots — que contaria o mesmo
-  // conteúdo várias vezes.
-  const { data: totaisRaw, error: erroTotais } = await db().rpc('overview_media_totals', {
-    desde_param: desde,
-  })
-  if (erroTotais) throw new Error(`Falha ao agregar métricas: ${erroTotais.message}`)
+  if (totaisR.error) throw new Error(`Falha ao agregar métricas: ${totaisR.error.message}`)
+  const totaisRaw = totaisR.data
   // A função é `returns table`, então o PostgREST devolve ARRAY com uma linha.
   // Ler `.views` direto no array devolvia undefined e a Home mostrava "—" para
   // métricas que existiam: 2,4M de views apareciam como indisponíveis.

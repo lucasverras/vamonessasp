@@ -1,5 +1,8 @@
 import Link from 'next/link'
 import { ComentariosTabela } from '@/components/comentarios-tabela'
+import { FilaEnvios, type DadosFila } from '@/components/fila-envios'
+import { sessaoAtual } from '@/lib/auth/guarda'
+import { db } from '@/lib/db'
 import { getAutomacao } from '@/lib/campaigns/create'
 import {
   contarPorStatus,
@@ -27,12 +30,27 @@ export default async function Comentarios({
   const { f } = await searchParams
   const filtro = (ABAS.find((a) => a.chave === f)?.chave ?? 'elegiveis') as Filtro
 
-  const [linhas, contagens, oportunidade, automacao] = await Promise.all([
-    listarComentarios(filtro),
-    contarPorStatus(),
-    resumoOportunidade(),
-    getAutomacao(),
-  ])
+  const [linhas, contagens, oportunidade, automacao, sessao, { data: painelRaw }] =
+    await Promise.all([
+      listarComentarios(filtro),
+      contarPorStatus(),
+      resumoOportunidade(),
+      getAutomacao(),
+      sessaoAtual(),
+      db().rpc('painel_envios'),
+    ])
+  const pe = (Array.isArray(painelRaw) ? painelRaw[0] : painelRaw) as Record<string, number> | null
+  const fila: DadosFila = {
+    naFila: Number(pe?.na_fila ?? 0),
+    aguardandoAprovacao: Number(pe?.aguardando_aprovacao ?? 0),
+    enviadasHoje: Number(pe?.enviadas_hoje ?? 0),
+    enviadasOntem: Number(pe?.enviadas_ontem ?? 0),
+    enviadasTotal: Number(pe?.enviadas_total ?? 0),
+    falhasHoje: Number(pe?.falhas_hoje ?? 0),
+    pessoasFaltam: Number(pe?.pessoas_faltam ?? 0),
+    seguidoresHoje: pe?.seguidores_hoje ?? null,
+    seguidoresOntem: pe?.seguidores_ontem ?? null,
+  }
 
   return (
     <main className="mx-auto max-w-[1180px] px-5 py-8 sm:px-8 lg:py-11">
@@ -91,6 +109,8 @@ export default async function Comentarios({
           ) : null}
         </section>
       ) : null}
+
+      <FilaEnvios dados={fila} admin={sessao?.papel === 'ADMIN'} />
 
       <nav
         className="rise mt-7 flex gap-1 overflow-x-auto border-b border-line-soft"
