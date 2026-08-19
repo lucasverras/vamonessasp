@@ -25,14 +25,15 @@ const ABAS: Array<{ chave: Filtro; rotulo: string }> = [
 export default async function Comentarios({
   searchParams,
 }: {
-  searchParams: Promise<{ f?: string }>
+  searchParams: Promise<{ f?: string; p?: string }>
 }) {
-  const { f } = await searchParams
+  const { f, p } = await searchParams
   const filtro = (ABAS.find((a) => a.chave === f)?.chave ?? 'elegiveis') as Filtro
+  const pagina = Math.max(0, Number(p ?? 0) || 0)
 
   const [linhas, contagens, oportunidade, automacao, sessao, { data: painelRaw }] =
     await Promise.all([
-      listarComentarios(filtro),
+      listarComentarios(filtro, 100, pagina),
       contarPorStatus(),
       resumoOportunidade(),
       getAutomacao(),
@@ -140,6 +141,24 @@ export default async function Comentarios({
 
       <div className="rise mt-6" style={{ animationDelay: '160ms' }}>
         <ComentariosTabela linhas={linhas} killSwitch={automacao?.kill_switch ?? true} />
+        {linhas.length === 100 ? (
+          <div className="mt-4 flex justify-center gap-2">
+            {pagina > 0 ? (
+              <Link href={`/comentarios?f=${filtro}&p=${pagina - 1}`} className="rounded-full border border-line px-4 py-2 text-[0.8125rem] text-ink-soft hover:border-ink-faint">
+                ← Anteriores
+              </Link>
+            ) : null}
+            <Link href={`/comentarios?f=${filtro}&p=${pagina + 1}`} className="rounded-full border border-line px-4 py-2 text-[0.8125rem] text-ink-soft hover:border-ink-faint">
+              Carregar mais →
+            </Link>
+          </div>
+        ) : pagina > 0 ? (
+          <div className="mt-4 flex justify-center">
+            <Link href={`/comentarios?f=${filtro}&p=${pagina - 1}`} className="rounded-full border border-line px-4 py-2 text-[0.8125rem] text-ink-soft hover:border-ink-faint">
+              ← Anteriores
+            </Link>
+          </div>
+        ) : null}
       </div>
     </main>
   )

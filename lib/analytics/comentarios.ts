@@ -41,7 +41,11 @@ function janela(ms: number): string | null {
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
 }
 
-export async function listarComentarios(filtro: Filtro = 'elegiveis', limite = 300) {
+export async function listarComentarios(
+  filtro: Filtro = 'elegiveis',
+  limite = 100,
+  pagina = 0,
+) {
   // "Elegíveis" = AINDA VALE MANDAR: uma linha por pessoa (comentário mais
   // recente), sem quem segue, sem DM na janela, sem quem JÁ ESTÁ NA FILA.
   // Calculado no banco — a aba, o card e a Home contam a mesma coisa.
@@ -85,7 +89,9 @@ export async function listarComentarios(filtro: Filtro = 'elegiveis', limite = 3
     .eq('is_from_account', false)
     .is('deleted_at', null)
     .order('commented_at', { ascending: false })
-    .limit(limite)
+    // Paginação server-side: 100 por página em vez de 300 de uma vez —
+    // payload 3x menor e TTFB proporcional. "Carregar mais" busca a próxima.
+    .range(pagina * limite, pagina * limite + limite - 1)
 
   if (filtro !== 'todos') q = q.eq('eligibility_status', MAPA[filtro])
 
