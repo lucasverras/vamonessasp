@@ -129,3 +129,43 @@ export async function marcarComoSeguidor(acaoId: string) {
   revalidatePath('/comentarios')
   return { ok: true as const }
 }
+
+/**
+ * "Esse aí NÃO me segue" — a contraparte do botão de seguidor, e o que torna
+ * o automático real hoje: marca NOT_FOLLOWING (fonte: você) e move as DMs
+ * pendentes da pessoa direto para a fila automática. Regra do Lucas (18/08):
+ * não-seguidor comprovado → DM automática; a prova hoje é o seu olho, e
+ * amanhã a API (Advanced Access), sem mudar mais nada.
+ */
+export async function marcarComoNaoSeguidor(acaoId: string) {
+  const sessao = await exigirSessao()
+  const { data: acao } = await db()
+    .from('comment_actions')
+    .select('id,instagram_user_id')
+    .eq('id', acaoId)
+    .maybeSingle()
+  if (!acao?.instagram_user_id) return { ok: false as const, erro: 'Ação sem identificador.' }
+
+  await db()
+    .from('instagram_users')
+    .update({
+      follow_status: 'NOT_FOLLOWING',
+      follow_status_checked_at: new Date().toISOString(),
+      follow_status_source: `manual:${sessao.usuario}`,
+    })
+    .eq('instagram_user_id', acao.instagram_user_id)
+
+  // As DMs pendentes da pessoa entram na fila automática — o worker revalida
+  // cada uma no envio (janela de 60 dias, pair, blacklist) como sempre.
+  const { data: movidas } = await db()
+    .from('comment_actions')
+    .update({ status: 'QUEUED', next_attempt_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('instagram_user_id', acao.instagram_user_id)
+    .eq('action_type', 'PRIVATE_REPLY')
+    .eq('status', 'PENDING_APPROVAL')
+    .select('id')
+
+  revalidatePath('/aprovacoes')
+  revalidatePath('/comentarios')
+  return { ok: true as const, enfileiradas: movidas?.length ?? 0 }
+}
