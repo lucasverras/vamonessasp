@@ -282,6 +282,36 @@ export async function responderHumano(
     .update({ review_outcome: 'HUMAN_REPLIED', reviewed_by: sessao.usuario, reviewed_at: new Date().toISOString() })
     .eq('id', analysisId)
 
+  // APRENDIZADO NO ATO DA APROVAÇÃO (regra do Lucas, 19/08): a resposta que
+  // ele publicou vira conhecimento DESTE conteúdo, chaveado pelo tema que
+  // segurou a análise. A próxima pergunta igual já sai respondida — sem fila.
+  // Auditável em respostas_aprendidas; a última aprovada vence.
+  const { data: analiseInfo } = await db()
+    .from('comment_analyses')
+    .select('decision_reason_code,intent')
+    .eq('id', analysisId)
+    .maybeSingle()
+  const topico = analiseInfo?.decision_reason_code || analiseInfo?.intent
+  if (topico && c.media_id) {
+    const { data: comentarioTxt } = await db()
+      .from('instagram_comments')
+      .select('text')
+      .eq('id', c.id)
+      .maybeSingle()
+    await db()
+      .from('respostas_aprendidas')
+      .upsert(
+        {
+          media_id: c.media_id,
+          topico,
+          pergunta_exemplo: comentarioTxt?.text ?? null,
+          resposta_aprovada: t,
+          aprovado_por: sessao.usuario,
+        },
+        { onConflict: 'media_id,topico' },
+      )
+  }
+
   let dmDetalhe: string | undefined
   if (enviarDm) {
     const cfg = await lerConfigAutomacao()

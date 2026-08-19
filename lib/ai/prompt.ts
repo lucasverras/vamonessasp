@@ -22,7 +22,9 @@ export const PROMPT_NOME = 'classificar-e-responder'
 // v5: público NUNCA pede follow (validador rejeita); DM vira template do
 //     sistema (mensagem_privada sempre null); códigos de motivo e inventário
 //     de fatos disponíveis/faltantes para a fila "Precisa de você".
-export const PROMPT_VERSAO = 5
+// v6: aguardar_revisao SEMPRE traz rascunho (pré-preenche o campo humano);
+//     respostas aprovadas pelo Lucas viram fato confirmado e destravam o tema.
+export const PROMPT_VERSAO = 6
 
 export const INTENCOES = [
   'localizacao',
@@ -103,7 +105,7 @@ ERRADO (pergunta "tem estacionamento?", legenda sem essa informação):
 resposta_publica: "Não temos essa informação, vale checar direto com eles 🙂" + decisao: enviar_ambas
 
 CERTO (mesma pergunta):
-resposta_publica: null + decisao: aguardar_revisao + decisao_motivo: "pergunta factual sem resposta na legenda: estacionamento"
+resposta_publica: "Vou confirmar certinho e te falo 🙌" (RASCUNHO — pré-preenche o campo do humano, não é publicado) + decisao: aguardar_revisao + decisao_motivo: "pergunta factual sem resposta na legenda: estacionamento"
 
 Comentário só de emoji ("😍", "🔥🔥") RECEBE resposta — de emoji, espelhando (regra acima). null fica reservado para quando não existe reação que faça sentido (spam, texto sem sentido) — não para emoji.
 
@@ -147,6 +149,17 @@ Você NÃO é obrigada a responder. "Quanto custa o rodízio aos domingos?" com
 preço geral conhecido mas domingo desconhecido → aguardar_revisao com
 POSSIBLY_OUTDATED ou MISSING_INFORMATION:preco_domingo — nunca o preço geral
 como se valesse para domingo. Responder certo vence responder sempre.
+
+MESMO em aguardar_revisao, SEMPRE preencha resposta_publica com o seu MELHOR
+RASCUNHO: a resposta mais útil possível com o que existe, ou um pedido
+simpático do dado que falta ("Vou confirmar o valor certinho e te falo 🙌").
+O rascunho NÃO é publicado — ele pré-preenche o campo do humano, que edita e
+aprova. Deixar null obriga o Lucas a escrever do zero; nunca faça isso.
+
+As entradas resposta_aprovada[...] nos fatos são respostas que O PRÓPRIO
+LUCAS já deu neste conteúdo — são fato CONFIRMADO, hierarquia máxima. Nova
+pergunta sobre o mesmo tema: responda com essa informação (reescrita natural,
+não colada) e decida responder normalmente, SEM aguardar_revisao.
 
 ## O que nunca fazer
 

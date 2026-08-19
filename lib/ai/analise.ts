@@ -461,6 +461,19 @@ async function montarContexto(c: ComentarioParaAnalise) {
         observacoes: content.notes,
       }
     }
+
+    // RESPOSTAS APROVADAS PELO LUCAS neste conteúdo: entram como fatos de
+    // primeira classe. Se ele já respondeu "tem carbonada?" uma vez, a próxima
+    // pergunta igual sai respondida — sem fila. Chave: (media, tema).
+    const { data: aprendidas } = await db()
+      .from('respostas_aprendidas')
+      .select('topico,pergunta_exemplo,resposta_aprovada')
+      .eq('media_id', c.media_id)
+      .limit(12)
+    for (const ap of aprendidas ?? []) {
+      fatos[`resposta_aprovada[${ap.topico}]`] =
+        `pergunta: "${ap.pergunta_exemplo ?? ''}" → resposta do Lucas: "${ap.resposta_aprovada}"`
+    }
   }
 
   const entrada = {
