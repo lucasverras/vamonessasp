@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagram/account'
 import { getAutomacao } from '@/lib/campaigns/create'
 import { db } from '@/lib/db'
+import { ImportarSeguidores } from '@/components/importar-seguidores'
 import { definirCadencia, definirModoAutomacao, definirRegrasDm, definirTemplateDm, definirTemplateMencao } from './acoes-automacao'
 import { alternarKillSwitch } from '../../comentarios/acoes'
 
@@ -418,6 +419,8 @@ export default async function InstagramSettingsPage({
           </button>
         </form>
       </section>
+
+      <ImportarSeguidores />
 
       {/* Saúde da automação: números das últimas 24h, direto do banco. */}
       <SaudeAutomacao />

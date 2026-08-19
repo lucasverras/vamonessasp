@@ -24,9 +24,21 @@ const CACHE_HORAS = 24
 export async function consultarFollowStatus(igsid: string): Promise<FollowStatus> {
   const { data: cache } = await db()
     .from('instagram_users')
-    .select('follow_status,follow_status_checked_at')
+    .select('follow_status,follow_status_checked_at,follow_status_source')
     .eq('instagram_user_id', igsid)
     .maybeSingle()
+
+  // Fontes soberanas: marcação manual do Lucas e a EXPORTAÇÃO OFICIAL de
+  // seguidores ("Baixar suas informações"). A API ainda não responde (Advanced
+  // Access pendente) — se deixássemos o refresh de 24h rodar, ele sobrescreveria
+  // esses status com UNKNOWN e desligaria o filtro que acabou de ser alimentado.
+  const fonteCache = cache?.follow_status_source ?? ''
+  if (
+    cache?.follow_status !== 'UNKNOWN' &&
+    (fonteCache.startsWith('manual') || fonteCache.startsWith('export'))
+  ) {
+    return cache!.follow_status as FollowStatus
+  }
 
   if (
     cache?.follow_status_checked_at &&

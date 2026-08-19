@@ -140,3 +140,31 @@ export async function definirTemplateMencao(form: FormData): Promise<ResultadoCf
   revalidatePath('/configuracoes/instagram')
   return { ok: true }
 }
+
+/** Importa a exportação oficial de seguidores ("Baixar suas informações"). ADMIN. */
+export async function importarSeguidoresAction(form: FormData): Promise<
+  | { ok: true; seguidoresNoArquivo: number; marcadosComoSeguidores: number; marcadosComoNaoSeguidores: number; dmsPuladasDeSeguidores: number }
+  | { ok: false; erro: string }
+> {
+  let sessao
+  try {
+    sessao = await exigirAdmin('importar seguidores')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const arquivo = form.get('arquivo')
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { ok: false, erro: 'Selecione o arquivo followers_1.json da exportação.' }
+  }
+  if (arquivo.size > 20 * 1024 * 1024) return { ok: false, erro: 'Arquivo grande demais (20MB máx).' }
+  try {
+    const { importarSeguidores } = await import('@/lib/instagram/importar-seguidores')
+    const r = await importarSeguidores(await arquivo.text(), sessao.usuario)
+    revalidatePath('/configuracoes/instagram')
+    revalidatePath('/comentarios')
+    revalidatePath('/aprovacoes')
+    return { ok: true, ...r }
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Falha ao importar.' }
+  }
+}
