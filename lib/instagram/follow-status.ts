@@ -108,9 +108,10 @@ export async function gateDmParaIgsid(igsid: string | null): Promise<GateDm> {
   if (followStatus === 'FOLLOWS') {
     return { pode: false, motivo: 'SKIPPED_ALREADY_FOLLOWING', followStatus }
   }
-  if (followStatus === 'UNKNOWN') {
-    return { pode: false, motivo: 'FOLLOW_STATUS_UNKNOWN', followStatus }
-  }
+  // UNKNOWN envia (decisão de 18/08, autorizada pelo Lucas ao ligar o LIVE):
+  // sem Advanced Access todo mundo é UNKNOWN, e o template já diz "se ainda
+  // não segue" — frase que funciona para os dois casos. Quando o App Review
+  // liberar o campo, FOLLOWS confirmado volta a ser filtrado aqui em cima.
 
   const [{ data: pessoa }, { data: cfg }] = await Promise.all([
     db()
