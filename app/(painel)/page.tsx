@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowUpRight, Play } from 'lucide-react'
 import { GrowthChart } from '@/components/growth-chart'
 import { db } from '@/lib/db'
-import { getFunnelToday, getOverview, getTopContent } from '@/lib/analytics/overview'
+import { getFunnelToday, getOverview, getTopContent, resolverPeriodo, type PeriodoHome } from '@/lib/analytics/overview'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,10 +18,22 @@ function compacto(n: number | null) {
   return n.toLocaleString('pt-BR')
 }
 
-export default async function VisaoGeral() {
+const PERIODOS: Array<[string, string]> = [
+  ['7d', '7 dias'], ['15d', '15 dias'], ['30d', '30 dias'], ['60d', '60 dias'],
+  ['90d', '90 dias'], ['mes', 'Este mês'], ['mes-anterior', 'Mês passado'], ['tudo', 'Tudo'],
+]
+
+export default async function VisaoGeral({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>
+}) {
+  const { period } = await searchParams
+  const periodo = (PERIODOS.some(([k]) => k === period) ? period : '30d') as PeriodoHome
+  const { rotulo, desde: desdePeriodo, ate: atePeriodo } = resolverPeriodo(periodo)
   const [{ conta, kpis, serieDiaria }, top, funil, { data: aquisicaoRaw }] = await Promise.all([
-    getOverview(30),
-    getTopContent(6),
+    getOverview(periodo),
+    getTopContent(6, desdePeriodo.toISOString(), atePeriodo.toISOString()),
     getFunnelToday(),
     db().rpc('central_aquisicao_kpis'),
   ])
@@ -38,7 +50,24 @@ export default async function VisaoGeral() {
           <h1 className="font-display text-[1.75rem] font-semibold tracking-[-0.03em] sm:text-[2rem]">
             Visão geral
           </h1>
-          <p className="mt-1 text-sm text-ink-faint">Últimos 30 dias · @{conta?.username}</p>
+          <p className="mt-1 text-sm text-ink-faint">
+            {rotulo} · comparando com o período anterior · @{conta?.username}
+          </p>
+          {/* Filtro GLOBAL: todos os cards, gráficos e comparações respondem
+              a ele, e a URL (?period=) preserva a análise no reload. */}
+          <div className="mt-3 flex flex-wrap gap-1">
+            {PERIODOS.map(([k, r]) => (
+              <Link
+                key={k}
+                href={k === '30d' ? '/' : `/?period=${k}`}
+                className={`rounded-full px-3 py-1.5 text-[0.75rem] font-medium transition-colors ${
+                  periodo === k ? 'bg-accent text-void' : 'text-ink-faint hover:bg-surface hover:text-ink'
+                }`}
+              >
+                {r}
+              </Link>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {funil.precisaDeVoce > 0 ? (

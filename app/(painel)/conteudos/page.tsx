@@ -37,12 +37,21 @@ const PLATAFORMAS: Array<[Plataforma, string]> = [
   ['tiktok', 'TikTok'],
 ]
 const ORDENACOES: Array<[Ordenacao, string]> = [
-  ['recentes', 'Mais recentes'],
-  ['antigos', 'Mais antigos'],
-  ['total', 'Total de views'],
-  ['ig', 'Views Instagram'],
-  ['fb', 'Views Facebook'],
+  ['recentes', 'Recentes'],
+  ['total', 'Views'],
+  ['alcance', 'Alcance'],
+  ['shares', 'Shares'],
+  ['comentarios', 'Comentários'],
+  ['salvos', 'Salvos'],
+  ['curtidas', 'Curtidas'],
   ['interacoes', 'Interações'],
+  ['share_rate', 'Share rate'],
+  ['save_rate', 'Save rate'],
+  ['comment_rate', 'Comment rate'],
+  ['engajamento', 'Engajamento'],
+  ['ig', 'IG'],
+  ['fb', 'FB'],
+  ['antigos', 'Antigos'],
 ]
 
 export default async function Conteudos({

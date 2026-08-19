@@ -39,7 +39,10 @@ export interface ConteudoConsolidado {
 
 export type Periodo = 'hoje' | '7d' | '30d' | 'mes' | 'mes-anterior' | 'tudo'
 export type Plataforma = 'todos' | 'instagram' | 'facebook' | 'tiktok'
-export type Ordenacao = 'recentes' | 'antigos' | 'total' | 'ig' | 'fb' | 'tt' | 'interacoes'
+export type Ordenacao =
+  | 'recentes' | 'antigos' | 'total' | 'ig' | 'fb' | 'tt' | 'interacoes'
+  | 'alcance' | 'shares' | 'comentarios' | 'salvos' | 'curtidas'
+  | 'share_rate' | 'save_rate' | 'comment_rate' | 'engajamento'
 
 export function inicioDoPeriodo(p: Periodo): { desde: Date; ate: Date | null } {
   const agora = new Date()
@@ -106,7 +109,34 @@ export function ordenar(itens: ConteudoConsolidado[], por: Ordenacao): ConteudoC
       return s.sort((a, b) => v(b.tt_views) - v(a.tt_views))
     case 'interacoes':
       return s.sort((a, b) => v(b.total_interacoes) - v(a.total_interacoes))
+    case 'alcance':
+      return s.sort((a, b) => v(b.ig_reach) - v(a.ig_reach))
+    case 'shares':
+      return s.sort((a, b) => v(somaOuNull([b.ig_shares, b.fb_shares])) - v(somaOuNull([a.ig_shares, a.fb_shares])))
+    case 'comentarios':
+      return s.sort((a, b) => v(somaOuNull([b.ig_comments, b.fb_comments])) - v(somaOuNull([a.ig_comments, a.fb_comments])))
+    case 'salvos':
+      return s.sort((a, b) => v(b.ig_saved) - v(a.ig_saved))
+    case 'curtidas':
+      return s.sort((a, b) => v(somaOuNull([b.ig_likes, b.fb_likes])) - v(somaOuNull([a.ig_likes, a.fb_likes])))
+    // Taxas: métrica / views — normaliza pelo tamanho, revela o conteúdo que
+    // converte em vez do que só distribuiu. Sem views → vai para o fim.
+    case 'share_rate':
+      return s.sort((a, b) => taxa(b, 'shares') - taxa(a, 'shares'))
+    case 'save_rate':
+      return s.sort((a, b) => taxa(b, 'saved') - taxa(a, 'saved'))
+    case 'comment_rate':
+      return s.sort((a, b) => taxa(b, 'comments') - taxa(a, 'comments'))
+    case 'engajamento':
+      return s.sort((a, b) => v(b.total_interacoes) / Math.max(v(b.total_views), 1) - v(a.total_interacoes) / Math.max(v(a.total_views), 1))
   }
+}
+
+function taxa(c: ConteudoConsolidado, m: 'shares' | 'saved' | 'comments'): number {
+  const views = c.ig_views ?? 0
+  if (views <= 0) return -1
+  const val = m === 'shares' ? c.ig_shares : m === 'saved' ? c.ig_saved : c.ig_comments
+  return (val ?? 0) / views
 }
 
 /** Publicações do Facebook ainda sem vínculo + a melhor sugestão de cada uma. */
