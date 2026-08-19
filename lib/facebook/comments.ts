@@ -157,7 +157,7 @@ a pessoa disse, 2 a 12 palavras quando o comentário permitir, sem CTA de
 follow, espelhar emoji VARIANDO (❤️→🫶/😍, 🔥→🔥🔥/🙌🔥 — não o mesmo emoji
 para todos). Endereço e preço SÓ se estiverem na legenda acima — nunca
 estime, nunca invente. Localização desconhecida: sugira exatamente
-"Vou confirmar certinho pra você 🙌" com decisao aguardar_revisao.
+"Melhor confirmar diretamente com eles no direct! 🙌" com decisao aguardar_revisao.
 decisao: responder | aguardar_revisao (fato ausente, crítica, ironia,
 política/religião/saúde/alergia/jurídico, ambíguo, baixa confiança) |
 descartar (spam). confianca: HIGH/MEDIUM/LOW — na dúvida, LOW e

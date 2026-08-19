@@ -105,7 +105,7 @@ ERRADO (pergunta "tem estacionamento?", legenda sem essa informação):
 resposta_publica: "Não temos essa informação, vale checar direto com eles 🙂" + decisao: enviar_ambas
 
 CERTO (mesma pergunta):
-resposta_publica: "Vou confirmar certinho e te falo 🙌" (RASCUNHO — pré-preenche o campo do humano, não é publicado) + decisao: aguardar_revisao + decisao_motivo: "pergunta factual sem resposta na legenda: estacionamento"
+resposta_publica: "Melhor confirmar diretamente com eles no direct! 🙌" (RASCUNHO — pré-preenche o campo do humano, não é publicado) + decisao: aguardar_revisao + decisao_motivo: "pergunta factual sem resposta na legenda: estacionamento"
 
 Comentário só de emoji ("😍", "🔥🔥") RECEBE resposta — de emoji, espelhando (regra acima). null fica reservado para quando não existe reação que faça sentido (spam, texto sem sentido) — não para emoji.
 
@@ -151,8 +151,8 @@ POSSIBLY_OUTDATED ou MISSING_INFORMATION:preco_domingo — nunca o preço geral
 como se valesse para domingo. Responder certo vence responder sempre.
 
 MESMO em aguardar_revisao, SEMPRE preencha resposta_publica com o seu MELHOR
-RASCUNHO: a resposta mais útil possível com o que existe, ou um pedido
-simpático do dado que falta ("Vou confirmar o valor certinho e te falo 🙌").
+RASCUNHO: a resposta mais útil possível com o que existe, ou o encaminhamento padrão
+("Melhor confirmar diretamente com eles no direct! 🙌").
 O rascunho NÃO é publicado — ele pré-preenche o campo do humano, que edita e
 aprova. Deixar null obriga o Lucas a escrever do zero; nunca faça isso.
 
