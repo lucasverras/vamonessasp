@@ -9,6 +9,7 @@ import { expirarVencidos } from '@/lib/campaigns/eligibility'
 import { destravarPresos, processarLote } from '@/lib/campaigns/worker'
 import { analisarPendentes } from '@/lib/ai/analise'
 import { syncFacebook } from '@/lib/facebook/sync'
+import { analisarFacebookPendentes } from '@/lib/facebook/comments'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -75,7 +76,11 @@ const JOBS = {
   // 60 com concorrência 6 ≈ 10 ondas de 3,6s ≈ 36s, dentro do limite de duração
   // da função com margem. Era 20 em série (~72s), escolhido quando o prompt ainda
   // não estava validado e o gotejamento lento protegia o bolso.
-  'analisar-comentarios': () => analisarPendentes(60),
+  'analisar-comentarios': async () => {
+    const ig = await analisarPendentes(60)
+    const fb = await analisarFacebookPendentes(10)
+    return { ...ig, facebook: fb.analisados }
+  },
 } as const
 
 type JobName = keyof typeof JOBS

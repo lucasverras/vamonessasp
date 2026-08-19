@@ -198,3 +198,26 @@ export async function responderManual(acaoId: string, texto: string): Promise<Re
   revalidatePath('/aprovacoes')
   return r
 }
+
+// ───────────────────────────── Facebook (resposta pública em REVIEW)
+
+export async function aprovarFb(id: string, texto?: string) {
+  const sessao = await exigirSessao()
+  const { responderComentarioFb } = await import('@/lib/facebook/comments')
+  const r = await responderComentarioFb(id, sessao.usuario, texto)
+  revalidatePath('/aprovacoes')
+  return r
+}
+
+export async function descartarFb(id: string) {
+  const sessao = await exigirSessao()
+  const { data } = await db()
+    .from('facebook_comments')
+    .update({ status: 'REJECTED', approved_by: sessao.usuario })
+    .eq('id', id)
+    .in('status', ['PENDING_APPROVAL', 'NEEDS_HUMAN'])
+    .select('id')
+    .maybeSingle()
+  revalidatePath('/aprovacoes')
+  return data ? { ok: true as const } : { ok: false as const, erro: 'Já processado.' }
+}

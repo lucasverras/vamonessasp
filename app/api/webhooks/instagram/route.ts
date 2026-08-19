@@ -12,6 +12,7 @@ import {
   extrairMencoes,
 } from '@/lib/instagram/webhooks'
 import { persistirMencoes } from '@/lib/instagram/mentions'
+import { extrairComentariosFb, persistirComentariosFb } from '@/lib/facebook/comments'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,6 +100,14 @@ export async function POST(request: NextRequest) {
     const mencoes = extrairMencoes(payload)
     if (mencoes.length > 0) {
       await persistirMencoes(mencoes)
+    }
+
+    // Comentários da Página do FACEBOOK (object=page, field=feed): entram no
+    // fluxo de resposta pública em REVIEW. Sem identidade do autor (Meta
+    // oculta `from` sem App Review) → sem DM, por construção.
+    const comentariosFb = extrairComentariosFb(payload)
+    if (comentariosFb.length > 0) {
+      await persistirComentariosFb(comentariosFb)
     }
 
     await db()

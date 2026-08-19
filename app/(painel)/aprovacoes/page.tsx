@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AlertTriangle, Inbox } from 'lucide-react'
 import { AprovacoesLista, type ItemAprovacao } from '@/components/aprovacoes-lista'
+import { AprovacoesFb, type ItemFb } from '@/components/aprovacoes-fb'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -48,10 +49,26 @@ export default async function Aprovacoes({
   if (origem === 'novos') q = q.is('campaign_id', null)
   if (origem === 'campanha') q = q.not('campaign_id', 'is', null)
 
-  const [{ data: acoes, error }, { data: metricasRaw }] = await Promise.all([
+  const [{ data: acoes, error }, { data: metricasRaw }, { data: fbRaw }] = await Promise.all([
     q,
     db().rpc('aprovacao_metricas'),
+    db()
+      .from('facebook_comments')
+      .select('id,user_name,message,post_message,suggested_reply,decision_reason,status,commented_at')
+      .in('status', ['PENDING_APPROVAL', 'NEEDS_HUMAN'])
+      .order('commented_at', { ascending: false })
+      .limit(30),
   ])
+  const itensFb: ItemFb[] = ((fbRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
+    id: String(f.id),
+    userName: (f.user_name as string | null) ?? null,
+    message: (f.message as string | null) ?? null,
+    postMessage: (f.post_message as string | null) ?? null,
+    sugestao: (f.suggested_reply as string | null) ?? null,
+    motivo: (f.decision_reason as string | null) ?? null,
+    precisaHumano: f.status === 'NEEDS_HUMAN',
+    quando: relativo(String(f.commented_at)),
+  }))
 
   // DMs que o portão barrou, por comentário — para a tela dizer o PORQUÊ em
   // vez de simplesmente não mostrar a DM.
@@ -260,6 +277,8 @@ export default async function Aprovacoes({
           </ul>
         )}
       </div>
+
+      <AprovacoesFb itens={itensFb} />
     </main>
   )
 }
