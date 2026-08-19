@@ -16,6 +16,8 @@ import { revalidar } from './eligibility'
 export interface ResultadoCriacao {
   campanhaId: string
   enfileirados: number
+  /** Onde as ações nasceram: fila direta (LIVE) ou aprovação (demais modos). */
+  destino: 'QUEUED' | 'PENDING_APPROVAL'
   recusados: Array<{ commentId: string; motivo: string }>
   dedupePorPessoa: number
 }
@@ -116,6 +118,7 @@ export async function criarCampanha(args: {
   return {
     campanhaId: campanha.id,
     enfileirados: aprovados.length,
+    destino: statusInicial,
     recusados,
     dedupePorPessoa,
   }

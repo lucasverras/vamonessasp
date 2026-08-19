@@ -92,7 +92,11 @@ export function ModalEnvio({
             </h2>
             <dl className="mt-4 space-y-2 text-[0.875rem]">
               <div className="flex justify-between">
-                <dt className="text-ink-faint">Na fila</dt>
+                <dt className="text-ink-faint">
+                  {resposta.destino === 'PENDING_APPROVAL'
+                    ? 'Aguardando sua aprovação (tela Aprovações)'
+                    : 'Na fila de envio'}
+                </dt>
                 <dd className="tnum font-semibold">{resposta.enfileirados}</dd>
               </div>
               {resposta.dedupePorPessoa ? (
@@ -108,6 +112,18 @@ export function ModalEnvio({
                 </div>
               ) : null}
             </dl>
+
+            {/* O PORQUÊ de cada recusa — sem isso o número é só frustração. */}
+            {resposta.motivos && resposta.motivos.length > 0 ? (
+              <ul className="mt-2 space-y-1 rounded-lg bg-surface/60 px-3.5 py-2.5">
+                {resposta.motivos.map(([motivo, n]) => (
+                  <li key={motivo} className="flex justify-between gap-3 text-[0.8125rem]">
+                    <span className="text-ink-soft">{MOTIVO_LEGIVEL[motivo] ?? motivo.toLowerCase().replace(/_/g, ' ')}</span>
+                    <span className="tnum shrink-0 text-ink-faint">{n}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {killSwitch ? (
               <p className="mt-4 flex gap-2 rounded-lg border border-warn/40 bg-warn-wash px-3 py-2.5 text-[0.8125rem] leading-relaxed text-warn">
                 <Lock className="mt-0.5 size-4 shrink-0" />

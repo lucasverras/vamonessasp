@@ -18,6 +18,10 @@ export interface RespostaEnvio {
   campanhaId?: string
   enfileirados?: number
   recusados?: number
+  /** Recusas agrupadas por motivo, da maior para a menor — "191 recusados"
+   *  sem o porquê não deixa ninguém decidir nada. */
+  motivos?: Array<[string, number]>
+  destino?: 'QUEUED' | 'PENDING_APPROVAL'
   dedupePorPessoa?: number
   erro?: string
 }
@@ -42,11 +46,20 @@ export async function enviarSelecao(formData: FormData): Promise<RespostaEnvio> 
     const r = await criarCampanha({ nome, mensagem, commentIds: ids })
     revalidatePath('/comentarios')
     revalidatePath('/campanhas')
+    // O motivo vem composto ("DM_RECENTE — última DM há 3 dias"); agrupamos
+    // pelo código antes do travessão para o modal mostrar contagens legíveis.
+    const porMotivo = new Map<string, number>()
+    for (const rec of r.recusados) {
+      const codigo = rec.motivo.split(' — ')[0] ?? rec.motivo
+      porMotivo.set(codigo, (porMotivo.get(codigo) ?? 0) + 1)
+    }
     return {
       ok: true,
       campanhaId: r.campanhaId,
       enfileirados: r.enfileirados,
+      destino: r.destino,
       recusados: r.recusados.length,
+      motivos: [...porMotivo.entries()].sort((a, b) => b[1] - a[1]),
       dedupePorPessoa: r.dedupePorPessoa,
     }
   } catch (e) {
