@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, MessageSquare, Pencil, Send, Trash2, X } from 'lucide-react'
+import { Check, MessageSquare, Pencil, Send, Trash2, UserCheck, X } from 'lucide-react'
 import {
   aprovarEEnviar,
   aprovarLote,
   descartar,
   editarEEnviar,
+  marcarComoSeguidor,
   salvarEdicao,
 } from '@/app/(painel)/aprovacoes/acoes'
 
@@ -178,6 +179,13 @@ function Item({
       else setEstado(r.erro)
     })
 
+  const ehSeguidor = () =>
+    start(async () => {
+      const r = await marcarComoSeguidor(item.id)
+      if (r.ok) setFeito('descartada')
+      else setEstado(r.erro)
+    })
+
   if (feito) {
     return (
       <li className="flex items-center gap-2.5 rounded-card border border-line bg-canvas px-4 py-3 text-[0.8125rem] text-ink-faint">
@@ -303,6 +311,16 @@ function Item({
               >
                 <Trash2 className="size-3.5" /> Descartar
               </button>
+              {item.tipo === 'PRIVATE_REPLY' ? (
+                <button
+                  onClick={ehSeguidor}
+                  disabled={pendente}
+                  title="Marca a pessoa como seguidora: pula todas as DMs pendentes dela e nunca mais sugere"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[0.8125rem] text-ink-faint hover:text-accent"
+                >
+                  <UserCheck className="size-3.5" /> É seguidor
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

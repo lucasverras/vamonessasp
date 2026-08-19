@@ -108,10 +108,14 @@ export async function gateDmParaIgsid(igsid: string | null): Promise<GateDm> {
   if (followStatus === 'FOLLOWS') {
     return { pode: false, motivo: 'SKIPPED_ALREADY_FOLLOWING', followStatus }
   }
-  // UNKNOWN envia (decisão de 18/08, autorizada pelo Lucas ao ligar o LIVE):
-  // sem Advanced Access todo mundo é UNKNOWN, e o template já diz "se ainda
-  // não segue" — frase que funciona para os dois casos. Quando o App Review
-  // liberar o campo, FOLLOWS confirmado volta a ser filtrado aqui em cima.
+  // REGRA ABSOLUTA (18/08, segunda decisão do Lucas, horas após a primeira):
+  // "SE É SEGUIDOR, NÃO RECEBE DM". Sem Advanced Access não dá para saber quem
+  // segue — então UNKNOWN NÃO recebe DM automática. A tentativa de liberar
+  // UNKNOWN durou 20 minutos e mandou DM para seguidores reais; revertido.
+  // Envio para UNKNOWN só por aprovação individual (você reconhece o username).
+  if (followStatus === 'UNKNOWN') {
+    return { pode: false, motivo: 'FOLLOW_STATUS_UNKNOWN', followStatus }
+  }
 
   const [{ data: pessoa }, { data: cfg }] = await Promise.all([
     db()

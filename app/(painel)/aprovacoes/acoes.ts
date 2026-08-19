@@ -93,3 +93,39 @@ export async function aprovarLote(acaoIds: string[]): Promise<ResultadoLoteAprov
   revalidatePath('/aprovacoes')
   return resultado
 }
+
+/**
+ * "Esse aí me segue" — você reconhece o username e marca. A pessoa vira
+ * FOLLOWS (fonte: manual), a DM pendente é pulada, e NENHUMA DM futura será
+ * sugerida ou enviada para ela (revalidar bloqueia FOLLOWS em todo caminho).
+ */
+export async function marcarComoSeguidor(acaoId: string) {
+  const sessao = await exigirSessao()
+  const { data: acao } = await db()
+    .from('comment_actions')
+    .select('id,instagram_user_id')
+    .eq('id', acaoId)
+    .maybeSingle()
+  if (!acao?.instagram_user_id) return { ok: false as const, erro: 'Ação sem identificador.' }
+
+  await db()
+    .from('instagram_users')
+    .update({
+      follow_status: 'FOLLOWS',
+      follow_status_checked_at: new Date().toISOString(),
+      follow_status_source: `manual:${sessao.usuario}`,
+    })
+    .eq('instagram_user_id', acao.instagram_user_id)
+
+  // Toda DM pendente dessa pessoa é pulada, não só esta.
+  await db()
+    .from('comment_actions')
+    .update({ status: 'SKIPPED', skip_reason: 'SKIPPED_ALREADY_FOLLOWING' })
+    .eq('instagram_user_id', acao.instagram_user_id)
+    .eq('action_type', 'PRIVATE_REPLY')
+    .in('status', ['PENDING_APPROVAL', 'QUEUED'])
+
+  revalidatePath('/aprovacoes')
+  revalidatePath('/comentarios')
+  return { ok: true as const }
+}
