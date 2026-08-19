@@ -596,7 +596,14 @@ async function gravarAnalise(args: {
           analysis_id: analiseSalva.id,
           action_type: x.tipo,
           mode: destino.status === 'QUEUED' ? ('AUTO' as const) : ('SHADOW' as const),
-          status: destino.status,
+          // REGRA DE OURO (spec 18/08): os dois fluxos têm modos separados.
+          // RESPOSTA PÚBLICA fica em REVIEW até a IA estar "100% no nosso
+          // jeito" — nunca publica sozinha, mesmo em LIVE. DM qualificada
+          // (não-seguidor comprovado + 60 dias) segue automática.
+          status:
+            x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED'
+              ? ('PENDING_APPROVAL' as const)
+              : destino.status,
           generated_text: x.texto,
           reply_source: 'AI',
           // As colunas da constraint USER+MEDIA: preenchidas SEMPRE, para o
