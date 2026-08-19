@@ -97,6 +97,9 @@ export default async function Comentarios({
                 {oportunidade.removidasDetalhe.dmRecente > 0
                   ? ` · ${oportunidade.removidasDetalhe.dmRecente} com DM nos últimos 60 dias`
                   : ''}
+                {oportunidade.removidasDetalhe.jaNaFila > 0
+                  ? ` · ${oportunidade.removidasDetalhe.jaNaFila} já na fila esperando seu OK`
+                  : ''}
                 {oportunidade.removidasDetalhe.jaSegue > 0
                   ? ` · ${oportunidade.removidasDetalhe.jaSegue} já seguem`
                   : ''}

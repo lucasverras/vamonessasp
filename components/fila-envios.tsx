@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCheck, Loader2, Trash2 } from 'lucide-react'
 import { limparDuplicadosAction, limparJaAtendidosAction } from '@/app/(painel)/comentarios/acoes'
@@ -41,12 +42,12 @@ export function FilaEnvios({ dados, admin }: { dados: DadosFila; admin: boolean 
     })
 
   const C = [
-    ['Faltam', dados.pessoasFaltam, 'pessoas elegíveis'],
-    ['Aguardando OK', dados.aguardandoAprovacao, 'na aprovação'],
-    ['Na fila', dados.naFila, 'prontas p/ sair'],
-    ['Hoje', dados.enviadasHoje, 'enviadas'],
-    ['Ontem', dados.enviadasOntem, 'enviadas'],
-    ['Total', dados.enviadasTotal, 'já foram'],
+    ['Faltam', dados.pessoasFaltam, 'pessoas elegíveis', '/comentarios?f=elegiveis'],
+    ['Aguardando OK', dados.aguardandoAprovacao, 'na aprovação', '/aprovacoes'],
+    ['Na fila', dados.naFila, 'prontas p/ sair', '/campanhas'],
+    ['Hoje', dados.enviadasHoje, 'enviadas', '/comentarios?f=enviados'],
+    ['Ontem', dados.enviadasOntem, 'enviadas', '/comentarios?f=enviados'],
+    ['Total', dados.enviadasTotal, 'já foram', '/comentarios?f=enviados'],
   ] as const
 
   return (
@@ -82,12 +83,12 @@ export function FilaEnvios({ dados, admin }: { dados: DadosFila; admin: boolean 
       ) : null}
 
       <dl className="tnum mt-3 grid grid-cols-3 gap-x-4 gap-y-3 sm:grid-cols-6">
-        {C.map(([k, v, sub]) => (
-          <div key={k}>
+        {C.map(([k, v, sub, href]) => (
+          <Link key={k} href={href} className="rounded-lg px-1 py-0.5 transition-colors hover:bg-surface/60">
             <dt className="text-[0.625rem] uppercase tracking-wider text-ink-faint">{k}</dt>
             <dd className="font-display text-xl font-semibold leading-tight">{v.toLocaleString('pt-BR')}</dd>
             <dd className="text-[0.625rem] text-ink-faint">{sub}</dd>
-          </div>
+          </Link>
         ))}
       </dl>
 

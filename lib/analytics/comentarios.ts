@@ -42,6 +42,41 @@ function janela(ms: number): string | null {
 }
 
 export async function listarComentarios(filtro: Filtro = 'elegiveis', limite = 300) {
+  // "Elegíveis" = AINDA VALE MANDAR: uma linha por pessoa (comentário mais
+  // recente), sem quem segue, sem DM na janela, sem quem JÁ ESTÁ NA FILA.
+  // Calculado no banco — a aba, o card e a Home contam a mesma coisa.
+  if (filtro === 'elegiveis') {
+    const { data, error } = await db().rpc('listar_elegiveis_limpos', { limite })
+    if (error) throw new Error(`Falha ao listar elegíveis: ${error.message}`)
+    const agora = Date.now()
+    return ((data ?? []) as Array<{
+      id: string
+      username: string | null
+      comment_text: string | null
+      commented_at: string
+      eligibility_status: string
+      eligibility_expires_at: string
+      not_eligible_reason: string | null
+      caption: string | null
+      permalink: string | null
+      thumbnail_url: string | null
+    }>).map((c) => ({
+      id: c.id,
+      username: c.username,
+      text: c.comment_text,
+      commented_at: c.commented_at,
+      eligibility_status: c.eligibility_status,
+      eligibility_expires_at: c.eligibility_expires_at,
+      not_eligible_reason: c.not_eligible_reason,
+      conteudo: c.caption,
+      permalink: c.permalink,
+      thumbnail: c.thumbnail_url,
+      blacklist: false,
+      faz: relativo(agora - new Date(c.commented_at).getTime()),
+      restam: janela(new Date(c.eligibility_expires_at).getTime() - agora),
+    } satisfies ComentarioLinha))
+  }
+
   let q = db()
     .from('instagram_comments')
     .select(
@@ -97,15 +132,22 @@ export async function listarComentarios(filtro: Filtro = 'elegiveis', limite = 3
 }
 
 export async function contarPorStatus() {
-  const { data, error } = await db().rpc('contar_comentarios_por_status')
+  const [{ data, error }, { data: limpos }] = await Promise.all([
+    db().rpc('contar_comentarios_por_status'),
+    db().rpc('oportunidades_resumo'),
+  ])
   if (error) throw new Error(`Falha ao contar comentários: ${error.message}`)
   const mapa = new Map<string, number>(
     ((data ?? []) as Array<{ status: string; total: number }>).map((r) => [r.status, r.total]),
   )
   const total = [...mapa.values()].reduce((a, b) => a + b, 0)
+  const resumo = (Array.isArray(limpos) ? limpos[0] : limpos) as
+    | { pessoas_elegiveis: number }
+    | null
   return {
     todos: total,
-    elegiveis: mapa.get('ELIGIBLE') ?? 0,
+    // A aba conta PESSOAS que ainda valem mensagem — o mesmo número da lista.
+    elegiveis: Number(resumo?.pessoas_elegiveis ?? mapa.get('ELIGIBLE') ?? 0),
     enviados: mapa.get('SENT') ?? 0,
     falharam: mapa.get('FAILED') ?? 0,
     expirados: mapa.get('EXPIRED') ?? 0,
@@ -130,12 +172,14 @@ export async function resumoOportunidade() {
         removidas_ja_segue: number
         removidas_dm_recente: number
         removidas_blacklist: number
+        removidas_ja_na_fila: number
       }
     | undefined
   const removidas =
     Number(r?.removidas_ja_segue ?? 0) +
     Number(r?.removidas_dm_recente ?? 0) +
-    Number(r?.removidas_blacklist ?? 0)
+    Number(r?.removidas_blacklist ?? 0) +
+    Number(r?.removidas_ja_na_fila ?? 0)
   return {
     comentarios: Number(r?.comentarios_elegiveis ?? 0),
     mencoes: Number(r?.mencoes_elegiveis ?? 0),
@@ -147,6 +191,7 @@ export async function resumoOportunidade() {
       jaSegue: Number(r?.removidas_ja_segue ?? 0),
       dmRecente: Number(r?.removidas_dm_recente ?? 0),
       blacklist: Number(r?.removidas_blacklist ?? 0),
+      jaNaFila: Number(r?.removidas_ja_na_fila ?? 0),
     },
   }
 }
