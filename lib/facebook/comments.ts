@@ -23,6 +23,15 @@ import { contemCtaDeFollow, validarRespostaPublica } from '../ai/respostas'
  * (pages_manage_engagement, presente no nosso escopo de usuário).
  */
 
+/** Número na resposta que não existe no contexto = possível invenção. */
+export function respostaInventaFato(resposta: string | null, contexto: string): boolean {
+  if (!resposta) return false
+  const numsResposta = resposta.match(/\d+[\d.,]*/g) ?? []
+  if (numsResposta.length === 0) return false
+  const numsContexto = new Set((contexto.match(/\d+[\d.,]*/g) ?? []).map((n) => n.replace(/[.,]/g, '')))
+  return numsResposta.some((n) => !numsContexto.has(n.replace(/[.,]/g, '')))
+}
+
 export interface ComentarioFbWebhook {
   externalCommentId: string
   externalPostId: string | null
@@ -95,6 +104,9 @@ const AnaliseFb = z.object({
   resposta_publica: z.string().nullable(),
   decisao: z.enum(['responder', 'aguardar_revisao', 'descartar']),
   decisao_motivo: z.string(),
+  /** HIGH = óbvio · MEDIUM = exige interpretação · LOW = contexto
+   *  insuficiente ou tema delicado (nunca vira sugestão automática). */
+  confianca: z.enum(['HIGH', 'MEDIUM', 'LOW']),
 })
 
 let cliente: OpenAI | null = null
@@ -139,11 +151,17 @@ ${c.message}
 ${postMsg ?? '(indisponível)'}
 </legenda_do_post>
 
-Contexto: este é um comentário na PÁGINA DO FACEBOOK Vamo Nessa SP. Gere só a
-resposta_publica (as regras de público valem integralmente: responder ao que a
-pessoa disse, curto, sem CTA de follow, espelhar emoji). Sem mensagem_privada
-aqui. decisao: responder | aguardar_revisao (pergunta factual sem resposta na
-legenda, crítica, sensível) | descartar (spam).`
+Contexto: comentário na PÁGINA DO FACEBOOK Vamo Nessa SP. Gere só a
+resposta_publica — as regras de público valem integralmente: responder ao que
+a pessoa disse, 2 a 12 palavras quando o comentário permitir, sem CTA de
+follow, espelhar emoji VARIANDO (❤️→🫶/😍, 🔥→🔥🔥/🙌🔥 — não o mesmo emoji
+para todos). Endereço e preço SÓ se estiverem na legenda acima — nunca
+estime, nunca invente. Localização desconhecida: sugira exatamente
+"Vou confirmar certinho pra você 🙌" com decisao aguardar_revisao.
+decisao: responder | aguardar_revisao (fato ausente, crítica, ironia,
+política/religião/saúde/alergia/jurídico, ambíguo, baixa confiança) |
+descartar (spam). confianca: HIGH/MEDIUM/LOW — na dúvida, LOW e
+aguardar_revisao: perder uma resposta custa menos que responder besteira.`
 
       const r = await openai().responses.parse({
         model: 'gpt-5.6-terra',
@@ -155,10 +173,14 @@ legenda, crítica, sensível) | descartar (spam).`
       if (!a) throw new Error('sem saída estruturada')
 
       const ctaProibido = contemCtaDeFollow(a.resposta_publica)
+      // Fato inventado: número (preço, nº de rua) na resposta que NÃO existe
+      // no comentário nem na legenda = alucinação → humano decide.
+      const inventaFato = respostaInventaFato(a.resposta_publica, `${c.message ?? ''} ${postMsg ?? ''}`)
       const status =
         a.decisao === 'descartar'
           ? 'SKIPPED'
-          : a.decisao === 'aguardar_revisao' || ctaProibido || !a.resposta_publica
+          : a.decisao === 'aguardar_revisao' || ctaProibido || inventaFato ||
+              a.confianca === 'LOW' || !a.resposta_publica
             ? 'NEEDS_HUMAN'
             : 'PENDING_APPROVAL'
 
@@ -168,10 +190,22 @@ legenda, crítica, sensível) | descartar (spam).`
           status,
           suggested_reply: a.resposta_publica,
           intent: a.intencao,
-          decision_reason: ctaProibido ? 'CTA de follow vetado pelo validador' : a.decisao_motivo,
+          confidence: a.confianca,
+          decision_reason: ctaProibido
+            ? 'CTA de follow vetado pelo validador'
+            : inventaFato
+              ? 'Número na resposta ausente do contexto — possível fato inventado'
+              : a.decisao_motivo,
           post_message: postMsg,
         })
         .eq('id', c.id)
+
+      // Private Reply do FB: oportunidade criada SÓ para casos seguros
+      // (sensível/spam/revisão nunca recebem "segue a página").
+      if (status === 'PENDING_APPROVAL') {
+        const { criarPrFbSeElegivel } = await import('./private-replies')
+        await criarPrFbSeElegivel(c.id)
+      }
       analisados++
     } catch (e) {
       await db()

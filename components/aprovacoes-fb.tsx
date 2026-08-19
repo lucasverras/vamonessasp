@@ -6,6 +6,7 @@ import { aprovarFb, descartarFb } from '@/app/(painel)/aprovacoes/acoes'
 
 export interface ItemFb {
   id: string
+  confidence: string | null
   userName: string | null
   message: string | null
   postMessage: string | null
@@ -69,6 +70,19 @@ function Item({ item }: { item: ItemFb }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded bg-[#1877f2]/20 px-1.5 py-0.5 text-[0.625rem] font-bold text-[#6ea8ff]">FB</span>
         <span className="text-[0.8125rem] font-semibold">{item.userName ?? 'Autor oculto pela Meta'}</span>
+        {item.confidence ? (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[0.625rem] font-semibold ${
+              item.confidence === 'HIGH'
+                ? 'bg-accent-wash text-accent'
+                : item.confidence === 'MEDIUM'
+                  ? 'bg-surface text-ink-soft'
+                  : 'bg-warn-wash text-warn'
+            }`}
+          >
+            {item.confidence}
+          </span>
+        ) : null}
         {item.precisaHumano ? (
           <span className="rounded-full bg-warn-wash px-2 py-0.5 text-[0.625rem] font-medium text-warn">precisa de você</span>
         ) : null}

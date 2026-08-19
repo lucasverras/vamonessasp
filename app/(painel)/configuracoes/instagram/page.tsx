@@ -4,7 +4,7 @@ import { getConnectedAccount, getLastSyncRuns, syncAccount } from '@/lib/instagr
 import { getAutomacao } from '@/lib/campaigns/create'
 import { db } from '@/lib/db'
 import { ImportarSeguidores } from '@/components/importar-seguidores'
-import { definirCadencia, definirModoAutomacao, definirRegrasDm, definirTemplateDm, definirTemplateMencao } from './acoes-automacao'
+import { definirCadencia, definirModoAutomacao, definirPrFacebook, definirRegrasDm, definirTemplateDm, definirTemplateMencao } from './acoes-automacao'
 import { alternarKillSwitch } from '../../comentarios/acoes'
 
 export const dynamic = 'force-dynamic'
@@ -416,6 +416,36 @@ export default async function InstagramSettingsPage({
           </label>
           <button type="submit" className="mt-2 rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px">
             Salvar template de menção
+          </button>
+        </form>
+
+        {/* Private Reply do FACEBOOK: sem follow_status (não existe na API de
+            Página); cooldown 60d por usuário quando a Meta entregar identidade,
+            senão proteção por comentário. Envio real depende de
+            pages_messaging (re-autorizar + App Review). */}
+        <form
+          action={async (form: FormData) => {
+            'use server'
+            await definirPrFacebook(form)
+          }}
+          className="mt-6 border-t border-line-soft pt-5"
+        >
+          <p className="text-[0.6875rem] uppercase tracking-wider text-ink-faint">
+            Private Reply do Facebook
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-[0.8125rem]">
+            <input type="checkbox" name="fb_pr_enabled" defaultChecked={Boolean(automacao?.fb_private_reply_enabled)} className="size-4 accent-[var(--color-accent)]" />
+            Ativar (só funciona depois da permissão pages_messaging — até lá cada tentativa
+            registra a falha com o motivo)
+          </label>
+          <textarea
+            name="fb_dm_template"
+            rows={4}
+            defaultValue={automacao?.fb_dm_template ?? ''}
+            className="mt-2 w-full rounded-lg border border-line bg-void px-3 py-2.5 text-[0.875rem] leading-relaxed outline-none focus:border-accent"
+          />
+          <button type="submit" className="mt-2 rounded-lg bg-surface px-4 py-2 text-[0.8125rem] font-semibold transition-transform hover:-translate-y-px">
+            Salvar Facebook PR
           </button>
         </form>
       </section>

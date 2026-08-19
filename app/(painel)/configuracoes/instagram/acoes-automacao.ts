@@ -168,3 +168,25 @@ export async function importarSeguidoresAction(form: FormData): Promise<
     return { ok: false, erro: e instanceof Error ? e.message : 'Falha ao importar.' }
   }
 }
+
+/** Private Reply do Facebook: flag + template. ADMIN. */
+export async function definirPrFacebook(form: FormData): Promise<ResultadoCfg> {
+  try {
+    await exigirAdmin('configurar private reply do Facebook')
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Sem permissão.' }
+  }
+  const texto = String(form.get('fb_dm_template') ?? '').trim()
+  if (texto.length < 10) return { ok: false, erro: 'Template curto demais.' }
+  const { error } = await db()
+    .from('automation_settings')
+    .update({
+      fb_private_reply_enabled: form.get('fb_pr_enabled') === 'on',
+      fb_dm_template: texto,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', true)
+  if (error) return { ok: false, erro: error.message }
+  revalidatePath('/configuracoes/instagram')
+  return { ok: true }
+}

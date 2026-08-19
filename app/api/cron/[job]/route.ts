@@ -10,6 +10,7 @@ import { destravarPresos, processarLote } from '@/lib/campaigns/worker'
 import { analisarPendentes } from '@/lib/ai/analise'
 import { syncFacebook } from '@/lib/facebook/sync'
 import { analisarFacebookPendentes } from '@/lib/facebook/comments'
+import { processarPrivateRepliesFb } from '@/lib/facebook/private-replies'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -60,7 +61,11 @@ const JOBS = {
    * 600/h, 10/min mantém o ritmo abaixo do limite oficial de 750/h com folga.
    * Não faz nada enquanto o kill switch estiver ligado.
    */
-  'dm-worker': () => processarLote(10),
+  'dm-worker': async () => {
+    const ig = await processarLote(10)
+    const fbPr = await processarPrivateRepliesFb(5)
+    return { ...ig, facebookPrivateReplies: fbPr }
+  },
 
   /** Reels da Página do Facebook + auto-match com os contents do Instagram. */
   'sync-facebook': () => syncFacebook(),

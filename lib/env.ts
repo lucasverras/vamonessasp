@@ -18,6 +18,11 @@ export const META_SCOPES = [
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
+  // Private replies do Facebook (Messenger). Standard access só cobre admins
+  // do app; mensagens para pessoas reais exigem Advanced Access via App
+  // Review — a implementação está pronta e a flag fb_private_reply_enabled
+  // é o portão.
+  'pages_messaging',
 ] as const
 
 function required(name: string): string {

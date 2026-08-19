@@ -54,13 +54,14 @@ export default async function Aprovacoes({
     db().rpc('aprovacao_metricas'),
     db()
       .from('facebook_comments')
-      .select('id,user_name,message,post_message,suggested_reply,decision_reason,status,commented_at')
+      .select('id,user_name,message,post_message,suggested_reply,decision_reason,status,commented_at,confidence')
       .in('status', ['PENDING_APPROVAL', 'NEEDS_HUMAN'])
       .order('commented_at', { ascending: false })
       .limit(30),
   ])
   const itensFb: ItemFb[] = ((fbRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
     id: String(f.id),
+    confidence: (f.confidence as string | null) ?? null,
     userName: (f.user_name as string | null) ?? null,
     message: (f.message as string | null) ?? null,
     postMessage: (f.post_message as string | null) ?? null,
