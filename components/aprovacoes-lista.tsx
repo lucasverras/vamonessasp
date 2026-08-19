@@ -4,8 +4,10 @@ import { useState, useTransition } from 'react'
 import { Check, MessageSquare, Pencil, Send, Trash2, UserCheck, UserPlus, X } from 'lucide-react'
 import {
   aprovarEEnviar,
+  aprovarFb,
   aprovarLote,
   descartar,
+  descartarFb,
   editarEEnviar,
   marcarComoNaoSeguidor,
   marcarComoSeguidor,
@@ -15,6 +17,7 @@ import {
 
 export interface ItemAprovacao {
   id: string
+  plataforma: 'IG' | 'FB'
   tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'
   username: string | null
   comentario: string | null
@@ -49,10 +52,23 @@ export function AprovacoesLista({ itens }: { itens: ItemAprovacao[] }) {
     const ids = [...selecionados]
     setConfirmando(false)
     startTransition(async () => {
-      const r = await aprovarLote(ids)
-      const partes = [`${r.enviadas} enviada${r.enviadas === 1 ? '' : 's'}`]
-      if (r.jaProcessadas) partes.push(`${r.jaProcessadas} já processada(s)`)
-      if (r.falhas.length) partes.push(`${r.falhas.length} falhou/falharam`)
+      // FB e IG têm endpoints diferentes: separa e processa cada um pelo seu.
+      const fbIds = ids.filter((i) => itens.find((x) => x.id === i)?.plataforma === 'FB')
+      const igIds = ids.filter((i) => !fbIds.includes(i))
+      let enviadas = 0, jaProc = 0, falhas = 0
+      if (igIds.length) {
+        const r = await aprovarLote(igIds)
+        enviadas += r.enviadas; jaProc += r.jaProcessadas; falhas += r.falhas.length
+      }
+      for (const id of fbIds) {
+        const r = await aprovarFb(id)
+        if (r.ok) enviadas++
+        else if ((r.detalhe ?? '').includes('Já processado')) jaProc++
+        else falhas++
+      }
+      const partes = [`${enviadas} enviada${enviadas === 1 ? '' : 's'}`]
+      if (jaProc) partes.push(`${jaProc} já processada(s)`)
+      if (falhas) partes.push(`${falhas} falhou/falharam`)
       setResultadoLote(partes.join(' · '))
       setSelecionados(new Set())
     })
@@ -154,16 +170,24 @@ function Item({
   // servidor recusa o segundo de qualquer forma — defesa nas duas pontas.
   const aprovar = () =>
     start(async () => {
-      const r = await aprovarEEnviar(item.id)
+      const r =
+        item.plataforma === 'FB'
+          ? await aprovarFb(item.id)
+          : await aprovarEEnviar(item.id)
       if (r.ok) setFeito('enviada')
-      else setEstado(r.detalhe ?? r.status)
+      else setEstado(('detalhe' in r ? r.detalhe : undefined) ?? 'falhou')
     })
 
   const enviarEditada = () =>
     start(async () => {
-      const r = manual ? await responderManual(item.id, texto) : await editarEEnviar(item.id, texto)
+      const r =
+        item.plataforma === 'FB'
+          ? await aprovarFb(item.id, texto)
+          : manual
+            ? await responderManual(item.id, texto)
+            : await editarEEnviar(item.id, texto)
       if (r.ok) setFeito('enviada')
-      else setEstado(r.detalhe ?? r.status)
+      else setEstado(('detalhe' in r ? r.detalhe : undefined) ?? 'falhou')
     })
 
   const salvar = () =>
@@ -177,9 +201,9 @@ function Item({
 
   const jogarFora = () =>
     start(async () => {
-      const r = await descartar(item.id)
+      const r = item.plataforma === 'FB' ? await descartarFb(item.id) : await descartar(item.id)
       if (r.ok) setFeito('descartada')
-      else setEstado(r.erro)
+      else setEstado(('erro' in r ? r.erro : undefined) ?? 'falhou')
     })
 
   const ehSeguidor = () =>
@@ -228,7 +252,16 @@ function Item({
         ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[0.8125rem] font-semibold">@{item.username ?? '—'}</span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[0.625rem] font-bold ${
+                item.plataforma === 'FB' ? 'bg-[#1877f2]/20 text-[#6ea8ff]' : 'bg-accent-wash text-accent'
+              }`}
+            >
+              {item.plataforma}
+            </span>
+            <span className="text-[0.8125rem] font-semibold">
+              {item.plataforma === 'FB' ? (item.username ?? 'Autor oculto pela Meta') : `@${item.username ?? '—'}`}
+            </span>
             <span className={`rounded-full px-2 py-0.5 text-[0.625rem] font-semibold uppercase ${item.tipo === 'PRIVATE_REPLY' ? 'bg-accent-wash text-accent' : 'bg-surface text-ink-soft'}`}>
               {item.tipo === 'PRIVATE_REPLY' ? 'DM' : 'resposta pública'}
             </span>
@@ -314,7 +347,7 @@ function Item({
               >
                 <Pencil className="size-3.5" /> Editar
               </button>
-              {item.tipo === 'PUBLIC_REPLY' ? (
+              {item.tipo === 'PUBLIC_REPLY' && item.plataforma === 'IG' ? (
                 <button
                   onClick={() => { setManual(true); setTexto(''); setEditando(true) }}
                   disabled={pendente}
@@ -331,7 +364,7 @@ function Item({
               >
                 <Trash2 className="size-3.5" /> Descartar
               </button>
-              {item.tipo === 'PRIVATE_REPLY' ? (
+              {item.tipo === 'PRIVATE_REPLY' && item.plataforma === 'IG' ? (
                 <>
                   <button
                     onClick={naoSegue}

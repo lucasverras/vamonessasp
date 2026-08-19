@@ -91,6 +91,12 @@ export async function processarPrivateRepliesFb(lote = 5): Promise<{
 
   const conta = await getConnectedAccount()
   if (!conta?.facebookPageId) return r
+
+  // Sem pages_messaging no token, TODO envio falharia com #230 — em vez de
+  // fabricar FAILED em loop, as PRs esperam como ELIGIBLE e disparam sozinhas
+  // quando a re-autorização + App Review trouxerem o escopo.
+  if (!conta.scopes.includes('pages_messaging')) return r
+
   const token = await getPageToken(conta.id)
 
   const { data: pendentes } = await db()

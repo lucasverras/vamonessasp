@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { AlertTriangle, Inbox } from 'lucide-react'
 import { AprovacoesLista, type ItemAprovacao } from '@/components/aprovacoes-lista'
-import { AprovacoesFb, type ItemFb } from '@/components/aprovacoes-fb'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -59,16 +58,25 @@ export default async function Aprovacoes({
       .order('commented_at', { ascending: false })
       .limit(30),
   ])
-  const itensFb: ItemFb[] = ((fbRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
+  // FB na MESMA fila do IG (pedido de 19/08): badge distingue, ações roteiam
+  // pelo endpoint certo, lote misto funciona. Autor oculto vira aviso no nome.
+  const itensFb: ItemAprovacao[] = ((fbRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
     id: String(f.id),
-    confidence: (f.confidence as string | null) ?? null,
-    userName: (f.user_name as string | null) ?? null,
-    message: (f.message as string | null) ?? null,
-    postMessage: (f.post_message as string | null) ?? null,
-    sugestao: (f.suggested_reply as string | null) ?? null,
-    motivo: (f.decision_reason as string | null) ?? null,
-    precisaHumano: f.status === 'NEEDS_HUMAN',
+    plataforma: 'FB' as const,
+    tipo: 'PUBLIC_REPLY' as const,
+    username: (f.user_name as string | null) ?? null,
+    comentario: (f.message as string | null) ?? null,
+    conteudo: (f.post_message as string | null) ?? null,
+    thumbnail: null,
     quando: relativo(String(f.commented_at)),
+    sugestao: ((f.suggested_reply as string | null) ?? '').trim(),
+    editada: false,
+    intent: (f.confidence as string | null) ? `confiança ${f.confidence}` : null,
+    confianca: null,
+    motivo: (f.decision_reason as string | null) ?? null,
+    origem: 'novo' as const,
+    dmInfo:
+      'DM do Facebook: aguardando permissão pages_messaging (App Review) — a oportunidade fica registrada e dispara sozinha quando liberar.',
   }))
 
   // DMs que o portão barrou, por comentário — para a tela dizer o PORQUÊ em
@@ -126,6 +134,7 @@ export default async function Aprovacoes({
     } | null
     return {
       id: a.id,
+      plataforma: 'IG' as const,
       tipo: a.action_type as 'PUBLIC_REPLY' | 'PRIVATE_REPLY',
       username: c?.username ?? null,
       comentario: c?.text ?? null,
@@ -247,7 +256,7 @@ export default async function Aprovacoes({
 
       <div className="rise mt-5" style={{ animationDelay: '110ms' }}>
         {vista === 'pendentes' ? (
-          itens.length === 0 ? (
+          [...itensFb, ...itens].length === 0 ? (
             <div className="rounded-card border border-dashed border-line px-6 py-14 text-center">
               <Inbox className="mx-auto size-5 text-ink-faint" />
               <p className="mt-3 text-[0.9375rem] font-medium">Fila limpa</p>
@@ -256,7 +265,7 @@ export default async function Aprovacoes({
               </p>
             </div>
           ) : (
-            <AprovacoesLista itens={itens} />
+            <AprovacoesLista itens={[...itensFb, ...itens]} />
           )
         ) : (
           <ul className="space-y-2">
@@ -279,7 +288,6 @@ export default async function Aprovacoes({
         )}
       </div>
 
-      <AprovacoesFb itens={itensFb} />
     </main>
   )
 }
