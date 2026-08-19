@@ -585,6 +585,11 @@ async function gravarAnalise(args: {
     const gate = await gateDmParaIgsid(c.instagram_user_id)
     if (gate.pode) acoes.push({ tipo: 'PRIVATE_REPLY', texto: textoDm })
     else dmBloqueada = { motivo: gate.motivo }
+  } else if (forcaRevisao && NUNCA_AUTOMATICO.includes(a.intencao as Intencao)) {
+    // "Vocês passaram informação errada" NUNCA recebe "segue a gente 💚".
+    // Antes essa DM simplesmente não existia; agora existe o REGISTRO com o
+    // nome do enum — a tela de Negados mostra o porquê (spec Parte 11/16).
+    dmBloqueada = { motivo: 'SENSITIVE_INTERACTION' }
   }
 
   if (acoes.length > 0) {
