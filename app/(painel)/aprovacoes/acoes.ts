@@ -58,7 +58,7 @@ export async function descartar(acaoId: string, motivo?: string) {
     .update({
       status: 'REJECTED',
       rejected_by: sessao.usuario,
-      rejected_reason: motivo?.trim() || 'descartado na aprovação',
+      rejected_reason: motivo?.trim() || 'IGNORED_BY_OPERATOR',
     })
     .eq('id', acaoId)
     .in('status', ['PENDING_APPROVAL', 'QUEUED'])
@@ -168,4 +168,33 @@ export async function marcarComoNaoSeguidor(acaoId: string) {
   revalidatePath('/aprovacoes')
   revalidatePath('/comentarios')
   return { ok: true as const, enfileiradas: movidas?.length ?? 0 }
+}
+
+/**
+ * [RESPONDER MANUALMENTE]: você escreve do zero. reply_source vira HUMAN —
+ * as regras de estilo da automação não se aplicam ao seu texto — e o registro
+ * fica distinto de EDITAR (que mantém AI + edited_by = HUMAN_EDITED_AI).
+ */
+export async function responderManual(acaoId: string, texto: string): Promise<ResultadoAprovacao> {
+  let sessao
+  try {
+    sessao = await exigirSessao()
+  } catch (e) {
+    return { ok: false, status: 'VALIDACAO', detalhe: e instanceof Error ? e.message : 'Sessão.' }
+  }
+  const t = texto.trim()
+  if (t.length < 1) return { ok: false, status: 'VALIDACAO', detalhe: 'Escreva a resposta.' }
+
+  const { data } = await db()
+    .from('comment_actions')
+    .update({ reply_source: 'HUMAN', responded_by: sessao.usuario })
+    .eq('id', acaoId)
+    .eq('status', 'PENDING_APPROVAL')
+    .select('id')
+    .maybeSingle()
+  if (!data) return { ok: false, status: 'JA_PROCESSADA', detalhe: 'Já processado.' }
+
+  const r = await enviarAprovada(acaoId, sessao.usuario, t)
+  revalidatePath('/aprovacoes')
+  return r
 }

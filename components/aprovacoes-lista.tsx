@@ -9,6 +9,7 @@ import {
   editarEEnviar,
   marcarComoNaoSeguidor,
   marcarComoSeguidor,
+  responderManual,
   salvarEdicao,
 } from '@/app/(painel)/aprovacoes/acoes'
 
@@ -143,6 +144,7 @@ function Item({
   aoAlternar: () => void
 }) {
   const [editando, setEditando] = useState(false)
+  const [manual, setManual] = useState(false)
   const [texto, setTexto] = useState(item.sugestao)
   const [estado, setEstado] = useState<string | null>(null)
   const [feito, setFeito] = useState<'enviada' | 'descartada' | null>(null)
@@ -159,7 +161,7 @@ function Item({
 
   const enviarEditada = () =>
     start(async () => {
-      const r = await editarEEnviar(item.id, texto)
+      const r = manual ? await responderManual(item.id, texto) : await editarEEnviar(item.id, texto)
       if (r.ok) setFeito('enviada')
       else setEstado(r.detalhe ?? r.status)
     })
@@ -306,12 +308,22 @@ function Item({
                 {pendente ? 'Enviando…' : 'Aprovar e enviar'}
               </button>
               <button
-                onClick={() => setEditando(true)}
+                onClick={() => { setManual(false); setEditando(true) }}
                 disabled={pendente}
                 className="inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[0.8125rem] font-medium text-ink-soft hover:border-ink-faint"
               >
                 <Pencil className="size-3.5" /> Editar
               </button>
+              {item.tipo === 'PUBLIC_REPLY' ? (
+                <button
+                  onClick={() => { setManual(true); setTexto(''); setEditando(true) }}
+                  disabled={pendente}
+                  title="Escrever do zero — registrado como resposta HUMANA, sem regras da automação"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[0.8125rem] font-medium text-ink-soft hover:border-ink-faint"
+                >
+                  <MessageSquare className="size-3.5" /> Manual
+                </button>
+              ) : null}
               <button
                 onClick={jogarFora}
                 disabled={pendente}
