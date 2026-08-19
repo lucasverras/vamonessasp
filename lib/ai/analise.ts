@@ -5,6 +5,7 @@ import { zodTextFormat } from 'openai/helpers/zod'
 import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
 import { gateDmParaIgsid } from '../instagram/follow-status'
 import { contemCtaDeFollow, exemplosDeTom, pareceRespostaEsquiva } from './respostas'
+import { ehSoEmoji, espelharEmoji } from './emoji-local'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -210,10 +211,56 @@ export async function analisarPendentes(limite = 20) {
   }
 
   async function processarUm(c: ComentarioParaAnalise) {
-    await db()
+    // CLAIM ATÔMICO por comentário: com a análise rodando inline no webhook E
+    // no cron, dois workers pegam a mesma lista PENDING — só quem mover
+    // PENDING→ANALYZING processa; o outro pula. Sem isto: análise duplicada,
+    // custo dobrado e corrida nas ações (pego pela bateria adversarial).
+    const { data: claimed } = await db()
       .from('instagram_comments')
       .update({ analysis_status: 'ANALYZING' })
       .eq('id', c.id)
+      .eq('analysis_status', 'PENDING')
+      .select('id')
+      .maybeSingle()
+    if (!claimed) return
+
+    // TIER 1 — emoji puro (23% do corpus medido): espelho local determinístico
+    // com variação por hash, 0ms, $0. Passa pelo MESMO gravarAnalise — decidir,
+    // ações, gate de DM e validadores intactos; só a geração muda de fonte.
+    if (ehSoEmoji(c.text)) {
+      try {
+        const analiseLocal: Analise = {
+          intencao: 'elogio',
+          intencoes_secundarias: [],
+          confianca: 0.99,
+          sentimento: 'positivo',
+          idioma: 'pt',
+          risco: 'nenhum',
+          risco_motivos: [],
+          exige_humano: false,
+          resposta_publica: espelharEmoji(c.text ?? '', c.id),
+          mensagem_privada: null,
+          cta_estrategia: null,
+          decisao: 'enviar_ambas',
+          decisao_motivo: 'emoji puro espelhado localmente, sem IA',
+          decisao_motivo_codigo: 'OK',
+          fatos_disponiveis: [],
+          fatos_faltando: [],
+        }
+        await gravarAnalise({
+          comentario: c,
+          analise: analiseLocal,
+          promptId,
+          contexto: { prompt: 'local/emoji-mirror-v1', entrada: { comentario: c.text } },
+          modelo: 'local/emoji-mirror-v1',
+          uso: { entrada: 0, saida: 0, latenciaMs: 0 },
+        })
+        resultado.analisados += 1
+        return
+      } catch (e) {
+        console.error('[emoji-local] caiu para IA:', e)
+      }
+    }
 
     // Spam inequívoco não paga IA: classificação heurística, sem ação, direto
     // para ANALYZED. Se a heurística errar, o painel mostra e a pessoa continua
@@ -490,6 +537,7 @@ async function gravarAnalise(args: {
   promptId: string
   contexto: { prompt: string; entrada: unknown }
   forcarRevisaoPorGenerica?: boolean
+  modelo?: string
   uso: { entrada: number; saida: number; latenciaMs: number }
 }) {
   const { comentario: c, analise: a, promptId, contexto, uso } = args
@@ -521,7 +569,7 @@ async function gravarAnalise(args: {
     .from('comment_analyses')
     .insert({
       comment_id: c.id,
-      model: MODELO_PADRAO,
+      model: args.modelo ?? MODELO_PADRAO,
       prompt_id: promptId,
       prompt_name: PROMPT_NOME,
       prompt_version: PROMPT_VERSAO,
@@ -635,7 +683,13 @@ async function gravarAnalise(args: {
             analysis_id: analiseSalva.id,
             action_type: x.tipo,
             mode: destino.status === 'QUEUED' ? ('AUTO' as const) : ('SHADOW' as const),
-            status: destino.status,
+            // Mesma regra de ouro do caminho principal: pública NUNCA nasce
+            // QUEUED — este branch de colisão (23505) tinha ficado para trás
+            // e deixava uma pública escapar do REVIEW (pego pela bateria).
+            status:
+              x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED'
+                ? ('PENDING_APPROVAL' as const)
+                : destino.status,
             generated_text: x.texto,
             reply_source: 'AI',
             instagram_user_id: c.instagram_user_id,

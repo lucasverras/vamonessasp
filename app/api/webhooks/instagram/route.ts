@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, after, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { env } from '@/lib/env'
 import { safeEqual } from '@/lib/crypto'
@@ -114,6 +114,24 @@ export async function POST(request: NextRequest) {
       .from('webhook_events')
       .update({ processed_at: new Date().toISOString() })
       .eq('id', evento!.id)
+
+    // ANÁLISE INLINE (medido: o cron de 5min custava 164s de MEDIANA de
+    // espera; a IA em si leva 3,3s). after() roda DEPOIS do 200 para a Meta —
+    // o webhook continua respondendo rápido — e o claim atômico por comentário
+    // impede corrida com o cron, que vira a rede de segurança para o que o
+    // inline perder.
+    if (comentarios.length > 0 || extrairComentariosFb(payload).length > 0) {
+      after(async () => {
+        try {
+          const { analisarPendentes } = await import('@/lib/ai/analise')
+          await analisarPendentes(5)
+          const { analisarFacebookPendentes } = await import('@/lib/facebook/comments')
+          await analisarFacebookPendentes(3)
+        } catch (e) {
+          console.error('[webhook] análise inline falhou (cron cobre):', e)
+        }
+      })
+    }
 
     return NextResponse.json({ ok: true, comentarios: comentarios.length })
   } catch (e) {

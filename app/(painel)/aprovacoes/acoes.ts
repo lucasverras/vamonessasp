@@ -18,9 +18,10 @@ export async function aprovarEEnviar(acaoId: string): Promise<ResultadoAprovacao
   } catch (e) {
     return { ok: false, status: 'VALIDACAO', detalhe: e instanceof Error ? e.message : 'Sessão.' }
   }
-  const r = await enviarAprovada(acaoId, sessao.usuario)
-  revalidatePath('/aprovacoes')
-  return r
+  // Sem revalidatePath aqui: o item atualiza estado localmente e a página
+  // inteira não precisa re-renderizar a cada clique (600ms a menos por
+  // aprovação). Contadores atualizam na próxima navegação ou no lote.
+  return enviarAprovada(acaoId, sessao.usuario)
 }
 
 export async function editarEEnviar(acaoId: string, texto: string): Promise<ResultadoAprovacao> {
@@ -31,9 +32,7 @@ export async function editarEEnviar(acaoId: string, texto: string): Promise<Resu
     return { ok: false, status: 'VALIDACAO', detalhe: e instanceof Error ? e.message : 'Sessão.' }
   }
   if (texto.trim().length < 2) return { ok: false, status: 'VALIDACAO', detalhe: 'Texto vazio.' }
-  const r = await enviarAprovada(acaoId, sessao.usuario, texto)
-  revalidatePath('/aprovacoes')
-  return r
+  return enviarAprovada(acaoId, sessao.usuario, texto)
 }
 
 /** Salva a edição SEM enviar — continua na fila com a versão nova. */

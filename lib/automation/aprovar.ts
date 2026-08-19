@@ -93,9 +93,25 @@ export async function enviarAprovada(
       .eq('id', claimed.id)
   }
 
-  // Validações do instante do envio — as mesmas do fluxo automático.
+  // Validações + credenciais em PARALELO: revalidar, conta/token e o registro
+  // do comentário não dependem entre si — antes eram ~6 roundtrips em série
+  // (3,5s medidos do clique ao SENT; a Meta é ~1s disso, o resto era fila de
+  // idas ao banco). A ORDEM de segurança não muda: nada é enviado antes de
+  // todas as validações voltarem.
+  const [veredito0, contaP, comentarioP] = await Promise.all([
+    claimed.action_type === 'PRIVATE_REPLY'
+      ? revalidar(claimed.comment_id, claimed.id)
+      : Promise.resolve(null),
+    getConnectedAccount(),
+    db()
+      .from('instagram_comments')
+      .select('instagram_comment_id,instagram_user_id,deleted_at,is_from_account')
+      .eq('id', claimed.comment_id)
+      .maybeSingle(),
+  ])
+
   if (claimed.action_type === 'PRIVATE_REPLY') {
-    const veredito = await revalidar(claimed.comment_id, claimed.id)
+    const veredito = veredito0!
     if (!veredito.pode) {
       await devolver({
         status: veredito.motivo === 'FORA_DA_JANELA' ? 'EXPIRED' : 'SKIPPED',
@@ -104,11 +120,7 @@ export async function enviarAprovada(
       return { ok: false, status: 'INELEGIVEL', detalhe: veredito.motivo ?? 'inelegível' }
     }
   } else {
-    const { data: c } = await db()
-      .from('instagram_comments')
-      .select('deleted_at,is_from_account')
-      .eq('id', claimed.comment_id)
-      .maybeSingle()
+    const c = comentarioP.data
     if (!c || c.deleted_at || c.is_from_account) {
       await devolver({ status: 'SKIPPED', skip_reason: 'COMENTARIO_APAGADO' })
       return { ok: false, status: 'INELEGIVEL', detalhe: 'comentário não existe mais' }
@@ -122,18 +134,13 @@ export async function enviarAprovada(
     }
   }
 
-  const conta = await getConnectedAccount()
+  const conta = contaP
   if (!conta?.facebookPageId) {
     await devolver({ status: 'PENDING_APPROVAL', skip_reason: 'SEM_CONTA' })
     return { ok: false, status: 'VALIDACAO', detalhe: 'Conta desconectada.' }
   }
   const token = await getPageToken(conta.id)
-
-  const { data: comentario } = await db()
-    .from('instagram_comments')
-    .select('instagram_comment_id,instagram_user_id')
-    .eq('id', claimed.comment_id)
-    .single()
+  const comentario = comentarioP.data
 
   try {
     let externalId: string
