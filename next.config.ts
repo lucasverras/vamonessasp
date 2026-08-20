@@ -7,7 +7,8 @@ const nextConfig: NextConfig = {
   // O binário (bin/*.br) fica fora do trace automático — sem isto a função
   // sobe sem o Chromium e a rota do PDF falha com "input directory does not exist".
   outputFileTracingIncludes: {
-    '/api/media-kit/[id]/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
+    // A chave é um GLOB: '[id]' viraria classe de caracteres e não casaria.
+    '/api/media-kit/**': ['./node_modules/@sparticuz/chromium/bin/**'],
   },
 }
 
