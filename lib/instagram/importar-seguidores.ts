@@ -65,6 +65,17 @@ export async function importarSeguidores(
   const agora = new Date().toISOString()
   const setSeguidores = new Set(seguidores)
 
+  // A lista fica GUARDADA (followers_export): quem comentar DEPOIS desta
+  // importação é cruzado automaticamente (classificar_follow_por_export, no
+  // webhook e no cron). Substitui a foto anterior por inteiro.
+  await db().from('followers_export').delete().neq('username', '')
+  for (let i = 0; i < seguidores.length; i += 1000) {
+    const { error } = await db()
+      .from('followers_export')
+      .upsert(seguidores.slice(i, i + 1000).map((username) => ({ username, imported_at: agora, imported_by: importadoPor })), { onConflict: 'username' })
+    if (error) throw new Error(`Falha ao guardar a lista: ${error.message}`)
+  }
+
   // Todos os usuários que o painel conhece (quem já comentou/mencionou).
   const { data: conhecidos } = await db()
     .from('instagram_users')

@@ -65,6 +65,11 @@ export async function persistirComentarios(
     if (error) throw new Error(`Falha ao gravar pessoas: ${error.message}`)
   }
 
+  // Pessoa nova = UNKNOWN até bater com a lista guardada da exportação.
+  // Cruza AGORA, antes da análise decidir a DM (regra de 20/08: não está na
+  // lista dos 30k = não segue = elegível).
+  if (porPessoa.size > 0) await db().rpc('classificar_follow_por_export')
+
   const { data: pessoas } = await db()
     .from('instagram_users')
     .select('id,instagram_user_id')

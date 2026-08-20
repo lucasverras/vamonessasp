@@ -80,5 +80,7 @@ export async function persistirMencoes(mencoes: MencaoNormalizada[]): Promise<nu
         .upsert({ instagram_user_id: igsid, username }, { onConflict: 'instagram_user_id', ignoreDuplicates: true })
     }
   }
+  // Pessoa nova cruzada com a lista guardada da exportação (regra de 20/08).
+  if (gravadas > 0) await db().rpc('classificar_follow_por_export')
   return gravadas
 }
