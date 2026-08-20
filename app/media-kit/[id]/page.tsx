@@ -71,6 +71,8 @@ const CSS = `
   .mk{background:#fff;padding:0;gap:0;min-height:0}
   .mk .bar{display:none}
   .mk .pg{zoom:1;box-shadow:none;break-after:page;page-break-after:always}
+  .mk .pg:last-of-type{break-after:auto;page-break-after:auto}
+  html,body{height:auto;overflow:visible}
   @page{size:1080px 1920px;margin:0}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
