@@ -76,7 +76,7 @@ export default async function Aprovacoes({
     motivo: (f.decision_reason as string | null) ?? null,
     origem: 'novo' as const,
     dmInfo:
-      'DM do Facebook: aguardando permissão pages_messaging (App Review) — a oportunidade fica registrada e dispara sozinha quando liberar.',
+      'DM do Facebook indisponível: a Meta exige verificação de empresa (CNPJ) para mensagens de Página. A resposta pública cobre o Facebook.',
   }))
 
   // DMs que o portão barrou, por comentário — para a tela dizer o PORQUÊ em

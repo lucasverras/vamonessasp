@@ -435,8 +435,9 @@ export default async function InstagramSettingsPage({
           </p>
           <label className="mt-2 flex items-center gap-2 text-[0.8125rem]">
             <input type="checkbox" name="fb_pr_enabled" defaultChecked={Boolean(automacao?.fb_private_reply_enabled)} className="size-4 accent-[var(--color-accent)]" />
-            Ativar (só funciona depois da permissão pages_messaging — até lá cada tentativa
-            registra a falha com o motivo)
+            Ativar — indisponível sem verificação de empresa na Meta (CNPJ): o envio de
+            mensagens de Página exige App Review. Decisão atual: operar sem. Se um dia houver
+            CNPJ, basta ligar aqui e reautorizar.
           </label>
           <textarea
             name="fb_dm_template"
