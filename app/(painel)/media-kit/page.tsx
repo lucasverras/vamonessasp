@@ -85,9 +85,8 @@ export default async function MediaKitPage() {
             ['parceiros', 'Parceiros atendidos', m.parceiros],
             ['fb_seguidores', 'Seguidores da Página FB', m.fb_seguidores],
             ['tiktok_seguidores', 'TikTok — seguidores', m.tiktok_seguidores],
-            ['tiktok_views_90d', 'TikTok — views 90d', m.tiktok_views_90d],
-            ['tiktok_curtidas_90d', 'TikTok — curtidas 90d', m.tiktok_curtidas_90d],
-            ['tiktok_compart_90d', 'TikTok — compart. 90d', m.tiktok_compart_90d],
+            ['tiktok_curtidas_total', 'TikTok — curtidas no total', m.tiktok_curtidas_total],
+            ['tiktok_views_7d', 'TikTok — views · 7 dias', m.tiktok_views_7d],
           ].map(([name, l, v]) => (
             <div key={String(name)}>
               <label className={label} htmlFor={String(name)}>{l}</label>
@@ -101,6 +100,14 @@ export default async function MediaKitPage() {
           <div>
             <label className={label} htmlFor="whatsapp">WhatsApp</label>
             <input id="whatsapp" name="whatsapp" className={input} defaultValue={m.whatsapp ?? ''} />
+          </div>
+          <div className="sm:col-span-3">
+            <label className={label} htmlFor="foto_capa_url">Foto da capa (URL) — ou arquivo public/media-kit/capa.jpg</label>
+            <input id="foto_capa_url" name="foto_capa_url" className={input} placeholder="https://…" defaultValue={m.foto_capa_url ?? ''} />
+          </div>
+          <div className="sm:col-span-3">
+            <label className={label} htmlFor="foto_dupla_url">Foto da página 2 (URL) — ou arquivo public/media-kit/dupla.jpg</label>
+            <input id="foto_dupla_url" name="foto_dupla_url" className={input} placeholder="https://…" defaultValue={m.foto_dupla_url ?? ''} />
           </div>
           <div className="flex items-end">
             <button type="submit" className="rounded-lg border border-line px-3.5 py-2 text-[0.8125rem] font-medium text-ink-soft transition-colors hover:border-ink-faint hover:text-ink">

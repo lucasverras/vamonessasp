@@ -15,10 +15,11 @@ const iso = (d: number) => new Date(Date.now() - d * dia).toISOString()
 export interface MediaKitManual {
   parceiros: number | null
   tiktok_seguidores: number | null
-  tiktok_views_90d: number | null
-  tiktok_curtidas_90d: number | null
-  tiktok_compart_90d: number | null
+  tiktok_views_7d: number | null
+  tiktok_curtidas_total: number | null
   fb_seguidores: number | null
+  foto_capa_url: string | null
+  foto_dupla_url: string | null
   valor_padrao: number | null
   whatsapp: string | null
   updated_at: string | null
@@ -77,10 +78,11 @@ export async function getManual(): Promise<MediaKitManual> {
   return {
     parceiros: data?.parceiros ?? null,
     tiktok_seguidores: data?.tiktok_seguidores ?? null,
-    tiktok_views_90d: data?.tiktok_views_90d ?? null,
-    tiktok_curtidas_90d: data?.tiktok_curtidas_90d ?? null,
-    tiktok_compart_90d: data?.tiktok_compart_90d ?? null,
+    tiktok_views_7d: data?.tiktok_views_7d !== null && data?.tiktok_views_7d !== undefined ? Number(data.tiktok_views_7d) : null,
+    tiktok_curtidas_total: data?.tiktok_curtidas_total !== null && data?.tiktok_curtidas_total !== undefined ? Number(data.tiktok_curtidas_total) : null,
     fb_seguidores: data?.fb_seguidores ?? null,
+    foto_capa_url: data?.foto_capa_url ?? null,
+    foto_dupla_url: data?.foto_dupla_url ?? null,
     valor_padrao: data?.valor_padrao !== null && data?.valor_padrao !== undefined ? Number(data.valor_padrao) : null,
     whatsapp: data?.whatsapp ?? null,
     updated_at: data?.updated_at ?? null,
@@ -120,6 +122,13 @@ async function totaisPeriodo(dias: number): Promise<TotaisPeriodo> {
   }
 }
 
+function nomeDoTitulo(t: string): string | null {
+  const limpo = t.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '').replace(/\s+/g, ' ').trim()
+  const trecho = limpo.split(/[!?.:\n]/)[0]?.trim() ?? ''
+  const palavras = trecho.split(' ').filter(Boolean).slice(0, 6).join(' ')
+  return palavras.length >= 4 ? palavras : null
+}
+
 /** Coleta TUDO agora — é o que vira snapshot na geração. */
 export async function coletarNumeros(): Promise<NumerosMediaKit> {
   const [conta, ig30, ig90, casesR, { count: fbPosts90 }, manual] = await Promise.all([
@@ -142,7 +151,8 @@ export async function coletarNumeros(): Promise<NumerosMediaKit> {
       const t = (c.title ?? '').replace(/\s+/g, ' ').trim()
       return {
         titulo: t.length > 90 ? `${t.slice(0, 88).trimEnd()}…` : t,
-        handle: t.match(/@[\w.]+/)?.[0] ?? null,
+        // Sem @ na legenda: usa o começo do texto (sem emoji) como nome.
+        handle: t.match(/@[\w.]+/)?.[0] ?? nomeDoTitulo(t),
         data: c.published_at,
         thumbnail: c.thumbnail_url,
         permalink: c.permalink,
