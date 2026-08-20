@@ -112,11 +112,10 @@ function Head({ pill, light = false, tint = C.tint, color = C.blue }: { pill: st
   )
 }
 
-/** Arredonda como o design: números grandes "limpos" (3.860.000, 53.900). */
+/** Números EXATOS, iguais aos do painel (pedido de 20/08: "bata os números
+ *  certinho com os nossos"). Mantido o nome arred por compatibilidade. */
 function arred(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—'
-  const passo = n >= 1_000_000 ? 10_000 : n >= 100_000 ? 1_000 : n >= 10_000 ? 100 : 1
-  return fmtInt(Math.round(n / passo) * passo)
+  return fmtInt(n)
 }
 const pct = (a: number | null, b: number | null) => (a && b ? Math.max(4, Math.min(100, Math.round((a / b) * 100))) : 0)
 
