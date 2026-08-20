@@ -46,12 +46,25 @@ export default async function Campanhas() {
           </div>
           <div>
             <dt className="text-[0.6875rem] uppercase tracking-[0.08em] text-ink-faint">Envio</dt>
+            {/* O badge mentia: mostrava "liberado" com o MODO em OFF — e a
+                campanha ficava parada sem explicação. Kill switch e modo são
+                condições independentes; o badge mostra a mais restritiva. */}
             <dd
               className={`font-display text-xl font-semibold ${
-                automacao?.kill_switch ? 'text-warn' : 'text-accent'
+                automacao?.kill_switch || automacao?.reply_mode !== 'LIVE'
+                  ? 'text-warn'
+                  : 'text-accent'
               }`}
             >
-              {automacao?.kill_switch ? 'travado' : 'liberado'}
+              {automacao?.kill_switch
+                ? 'travado'
+                : automacao?.reply_mode === 'LIVE'
+                  ? 'liberado'
+                  : automacao?.reply_mode === 'APPROVAL_REQUIRED'
+                    ? 'modo aprovação'
+                    : automacao?.reply_mode === 'DRY_RUN'
+                      ? 'dry run'
+                      : 'automação OFF'}
             </dd>
           </div>
         </dl>
