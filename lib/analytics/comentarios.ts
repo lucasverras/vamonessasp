@@ -176,6 +176,7 @@ export async function resumoOportunidade() {
         pessoas_elegiveis: number
         removidas_duplicidade: number
         removidas_ja_segue: number
+        removidas_follow_desconhecido: number
         removidas_dm_recente: number
         removidas_blacklist: number
         removidas_ja_na_fila: number
@@ -183,6 +184,7 @@ export async function resumoOportunidade() {
     | undefined
   const removidas =
     Number(r?.removidas_ja_segue ?? 0) +
+    Number(r?.removidas_follow_desconhecido ?? 0) +
     Number(r?.removidas_dm_recente ?? 0) +
     Number(r?.removidas_blacklist ?? 0) +
     Number(r?.removidas_ja_na_fila ?? 0)
@@ -195,6 +197,7 @@ export async function resumoOportunidade() {
     removidas,
     removidasDetalhe: {
       jaSegue: Number(r?.removidas_ja_segue ?? 0),
+      followDesconhecido: Number(r?.removidas_follow_desconhecido ?? 0),
       dmRecente: Number(r?.removidas_dm_recente ?? 0),
       blacklist: Number(r?.removidas_blacklist ?? 0),
       jaNaFila: Number(r?.removidas_ja_na_fila ?? 0),

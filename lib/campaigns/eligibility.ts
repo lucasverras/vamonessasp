@@ -27,6 +27,7 @@ export type MotivoInelegivel =
   | 'JA_RECEBEU_DESTE_CONTEUDO'
   | 'JA_NA_FILA'
   | 'JA_SEGUE'
+  | 'FOLLOW_STATUS_UNKNOWN'
   | 'DM_RECENTE'
 
 export function expiraEm(comentadoEm: Date | string): Date {
@@ -75,6 +76,12 @@ export async function revalidar(
    * mensagem, e o motivo registrado parecia legítimo.
    */
   ignorarAcaoId?: string,
+  /**
+   * SÓ a aprovação individual (um humano olhando ESTA pessoa e clicando) pode
+   * passar true. Todo caminho em massa — campanha, qualificados, worker de
+   * fila de campanha — usa o default false.
+   */
+  opcoes?: { permitirFollowDesconhecido?: boolean },
 ): Promise<Veredito> {
   const { data: c } = await db()
     .from('instagram_comments')
@@ -131,11 +138,22 @@ export async function revalidar(
 
   if (pessoa?.is_blacklisted) return { pode: false, motivo: 'PESSOA_NA_BLACKLIST' }
 
-  // Quem comprovadamente já segue não recebe CTA de follow. UNKNOWN passa por
-  // aqui — o portão de SUGESTÃO já barrou; envio explícito humano é decisão
-  // humana. FOLLOWS é bloqueio duro em qualquer caminho.
+  // FOLLOWS é bloqueio duro em qualquer caminho.
   if (pessoa?.follow_status === 'FOLLOWS') {
     return { pode: false, motivo: 'JA_SEGUE' }
+  }
+
+  // INCIDENTE 20/08/2026: deixar UNKNOWN passar aqui mandou 118 DMs em massa
+  // para gente sem prova de follow — e parte delas eram seguidores que o
+  // export não casou por username. REGRA REFEITA: DM em massa SÓ para
+  // NOT_FOLLOWING comprovado (export/manual/API). UNKNOWN só atravessa quando
+  // um humano aprovou ESTA pessoa individualmente (permitirFollowDesconhecido).
+  if (pessoa?.follow_status !== 'NOT_FOLLOWING' && !opcoes?.permitirFollowDesconhecido) {
+    return {
+      pode: false,
+      motivo: 'FOLLOW_STATUS_UNKNOWN',
+      detalhe: 'sem prova de que não segue — só por aprovação individual',
+    }
   }
 
   // REGRA GLOBAL (18/08/2026, reverte a decisão de 17/08): UMA private reply

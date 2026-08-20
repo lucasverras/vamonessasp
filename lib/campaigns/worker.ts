@@ -105,7 +105,12 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
       item.action_type === 'PUBLIC_REPLY'
         ? await revalidarPublica(item.comment_id)
         : // Passa o próprio id: sem isso o worker se vê na fila e ignora tudo.
-          await revalidar(item.comment_id, item.id)
+          // Item SEM campanha só chega QUEUED por aprovação individual humana
+          // (ou pelo gate que já exige NOT_FOLLOWING); item DE campanha é
+          // massa — nunca envia sem prova de que a pessoa não segue.
+          await revalidar(item.comment_id, item.id, {
+            permitirFollowDesconhecido: !item.campaign_id,
+          })
     if (!veredito.pode) {
       r.ignorados += 1
       await db()

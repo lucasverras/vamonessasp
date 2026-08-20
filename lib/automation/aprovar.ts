@@ -100,7 +100,8 @@ export async function enviarAprovada(
   // todas as validações voltarem.
   const [veredito0, contaP, comentarioP] = await Promise.all([
     claimed.action_type === 'PRIVATE_REPLY'
-      ? revalidar(claimed.comment_id, claimed.id)
+      ? // Aprovação individual: você olhou ESTA pessoa — UNKNOWN pode.
+        revalidar(claimed.comment_id, claimed.id, { permitirFollowDesconhecido: true })
       : Promise.resolve(null),
     getConnectedAccount(),
     db()

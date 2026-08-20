@@ -51,7 +51,8 @@ export async function aprovar(acaoId: string, textoFinal: string): Promise<Resul
   // A elegibilidade é revalidada AQUI e será revalidada DE NOVO pelo worker.
   // Entre aprovar e enviar a janela de 7 dias pode fechar.
   if (acao.action_type === 'PRIVATE_REPLY') {
-    const veredito = await revalidar(acao.comment_id, acao.id)
+    // Decisão individual sua nesta pessoa — UNKNOWN pode.
+    const veredito = await revalidar(acao.comment_id, acao.id, { permitirFollowDesconhecido: true })
     if (!veredito.pode) {
       await db()
         .from('comment_actions')

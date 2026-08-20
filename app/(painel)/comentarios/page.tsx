@@ -101,6 +101,9 @@ export default async function Comentarios({
                 {oportunidade.removidasDetalhe.jaNaFila > 0
                   ? ` · ${oportunidade.removidasDetalhe.jaNaFila} já na fila esperando seu OK`
                   : ''}
+                {oportunidade.removidasDetalhe.followDesconhecido > 0
+                  ? ` · ${oportunidade.removidasDetalhe.followDesconhecido} sem prova de que não seguem (só por aprovação individual)`
+                  : ''}
                 {oportunidade.removidasDetalhe.jaSegue > 0
                   ? ` · ${oportunidade.removidasDetalhe.jaSegue} já seguem`
                   : ''}
