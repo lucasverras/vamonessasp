@@ -40,10 +40,10 @@ export interface TotaisPeriodo {
 export interface CaseMediaKit {
   titulo: string
   handle: string | null
-  /** Nome de exibição: apelido salvo > @ humanizado > nome no título. */
+  /** Nome de exibição (lista fixa CASES_FIXOS). */
   nome: string
-  /** Chave do apelido (para editar na aba). */
-  chave: string
+  /** Linha curta sob a data ("macarrão na chapa"). */
+  legenda: string
   data: string
   thumbnail: string | null
   permalink: string | null
@@ -126,75 +126,77 @@ async function totaisPeriodo(dias: number): Promise<TotaisPeriodo> {
   }
 }
 
-function nomeDoTitulo(t: string): string | null {
-  const limpo = t.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '').replace(/\s+/g, ' ').trim()
-  // "No Rei do Macarrão, ..." → nome próprio depois de no/na/do/da.
-  const proprio = limpo.match(/\b(?:[Nn][oa]|[Dd][oa])\s+((?:[A-ZÀ-Ú][\wÀ-ÿ'&.-]*)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][\wÀ-ÿ'&.-]*)*)/)
-  if (proprio?.[1] && proprio[1].length >= 3) return proprio[1].replace(/[.,]$/, '')
-  const trecho = limpo.split(/[!?.:\n]/)[0]?.trim() ?? ''
-  const palavras = trecho.split(' ').filter(Boolean).slice(0, 6).join(' ')
-  return palavras.length >= 4 ? palavras : null
-}
+/**
+ * CASES FIXOS (decisão do Lucas, 20/08/2026): a lista só muda quando ele
+ * pedir. Os NÚMEROS de cada case continuam vindo do banco a cada geração —
+ * o vídeo é localizado pelo @ (ou trecho do título) na legenda.
+ */
+export const CASES_FIXOS: Array<{ nome: string; legenda: string; busca: RegExp }> = [
+  { nome: 'Rei do Macarrão', legenda: 'macarrão na chapa', busca: /rei do macarr/i },
+  { nome: 'Chico Grill', legenda: 'Vila Matilde · Big Bone', busca: /@chicogrillvilamatilde/i },
+  { nome: 'Festival Itália', legenda: 'entrada gratuita', busca: /@festivalitaliamodern/i },
+  { nome: 'Degá', legenda: 'parmegiana no forno à lenha', busca: /@degasp/i },
+  { nome: 'Santo Mar', legenda: 'saco de frutos do mar', busca: /@santomarestaurante/i },
+]
 
-function humanizarHandle(h: string): string {
-  return h.replace(/^@/, '').replace(/[._]/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
-}
-
-export async function getApelidos(): Promise<Map<string, string>> {
-  const { data } = await db().from('media_kit_apelidos').select('chave,nome')
-  return new Map((data ?? []).map((a) => [String(a.chave).toLowerCase(), String(a.nome)]))
-}
-
-export async function salvarApelido(chave: string, nome: string) {
-  const k = chave.trim().toLowerCase()
-  if (!k) return
-  if (!nome.trim()) {
-    await db().from('media_kit_apelidos').delete().eq('chave', k)
-    return
+/** Seguidores da Página do Facebook pela Graph API (token da Página já
+ *  conectado). Falha vira null — o snapshot usa o último valor manual. */
+async function fbSeguidoresViaApi(): Promise<number | null> {
+  try {
+    const { getConnectedAccount, getPageToken } = await import('../instagram/account')
+    const { metaGet } = await import('../instagram/meta-client')
+    const conta = await getConnectedAccount()
+    if (!conta?.facebookPageId) return null
+    const token = await getPageToken(conta.id)
+    const r = (await metaGet<{ followers_count?: number; fan_count?: number }>(
+      `${conta.facebookPageId}`, token, { fields: 'followers_count,fan_count' },
+    )) as { followers_count?: number; fan_count?: number }
+    const n = r.followers_count ?? r.fan_count
+    return typeof n === 'number' ? n : null
+  } catch {
+    return null
   }
-  const { error } = await db()
-    .from('media_kit_apelidos')
-    .upsert({ chave: k, nome: nome.trim(), updated_at: new Date().toISOString() }, { onConflict: 'chave' })
-  if (error) throw new Error(error.message)
 }
 
 /** Coleta TUDO agora — é o que vira snapshot na geração. */
 export async function coletarNumeros(): Promise<NumerosMediaKit> {
-  const [conta, ig30, ig90, casesR, { count: fbPosts90 }, manual, apelidos] = await Promise.all([
+  const [conta, ig30, ig90, casesR, { count: fbPosts90 }, manualBase, fbSeguidores] = await Promise.all([
     db().from('instagram_accounts').select('username,followers_count,last_sync_at').limit(1).maybeSingle(),
     totaisPeriodo(30),
     totaisPeriodo(90),
-    db().rpc('conteudos_consolidados', { desde_param: iso(90) }),
+    db().rpc('conteudos_consolidados', { desde_param: iso(365) }),
     db().from('platform_posts').select('id', { count: 'exact', head: true }).eq('platform', 'facebook').gte('published_at', iso(90)),
     getManual(),
-    getApelidos(),
+    fbSeguidoresViaApi(),
   ])
+  // Seguidores do FB: API quando responde; senão o último valor guardado.
+  const manual: MediaKitManual = { ...manualBase, fb_seguidores: fbSeguidores ?? manualBase.fb_seguidores }
+  if (fbSeguidores !== null && fbSeguidores !== manualBase.fb_seguidores) {
+    await db().from('media_kit_manual').update({ fb_seguidores: fbSeguidores, updated_at: new Date().toISOString(), updated_by: 'graph api' }).eq('id', true)
+  }
   type Linha = {
     title: string | null; thumbnail_url: string | null; permalink: string | null; published_at: string
     ig_views: number | null; ig_reach: number | null; ig_likes: number | null; ig_shares: number | null; ig_saved: number | null; fb_views: number | null
   }
-  const cases = ((casesR.data ?? []) as Linha[])
-    .filter((c) => (c.ig_views ?? 0) > 0)
-    .sort((a, b) => (b.ig_views ?? 0) - (a.ig_views ?? 0))
-    .slice(0, 6)
-    .map((c) => {
-      const t = (c.title ?? '').replace(/\s+/g, ' ').trim()
-      const handle = t.match(/@[\w.]+/)?.[0] ?? null
-      // Sem @ na legenda: nome próprio do título ("No Rei do Macarrão").
-      const derivado = nomeDoTitulo(t)
-      const chave = (handle ?? derivado ?? t.slice(0, 40)).toLowerCase()
-      const nome = apelidos.get(chave) ?? (handle ? humanizarHandle(handle) : (derivado ?? 'Vamo Nessa'))
-      return {
-        titulo: t.length > 90 ? `${t.slice(0, 88).trimEnd()}…` : t,
-        handle,
-        nome,
-        chave,
-        data: c.published_at,
-        thumbnail: c.thumbnail_url,
-        permalink: c.permalink,
-        ig_views: c.ig_views, ig_reach: c.ig_reach, ig_likes: c.ig_likes, ig_shares: c.ig_shares, ig_saved: c.ig_saved, fb_views: c.fb_views,
-      }
+  const linhas = (casesR.data ?? []) as Linha[]
+  const cases: CaseMediaKit[] = []
+  for (const fixo of CASES_FIXOS) {
+    const c = linhas
+      .filter((l) => fixo.busca.test(l.title ?? ''))
+      .sort((a, b) => (b.ig_views ?? 0) - (a.ig_views ?? 0))[0]
+    if (!c) continue // vídeo fora da janela/banco: o case simplesmente não entra
+    const t = (c.title ?? '').replace(/\s+/g, ' ').trim()
+    cases.push({
+      titulo: t.length > 90 ? `${t.slice(0, 88).trimEnd()}…` : t,
+      handle: t.match(/@[\w.]+/)?.[0] ?? null,
+      nome: fixo.nome,
+      legenda: fixo.legenda,
+      data: c.published_at,
+      thumbnail: c.thumbnail_url,
+      permalink: c.permalink,
+      ig_views: c.ig_views, ig_reach: c.ig_reach, ig_likes: c.ig_likes, ig_shares: c.ig_shares, ig_saved: c.ig_saved, fb_views: c.fb_views,
     })
+  }
   return {
     geradoEm: new Date().toISOString(),
     username: conta.data?.username ?? 'vamonessasp',

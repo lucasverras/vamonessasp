@@ -127,6 +127,7 @@ function nomeCase(c: CaseMediaKit): string {
 }
 function legendaCase(c: CaseMediaKit): string {
   const data = new Date(c.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' })
+  if (c.legenda) return `${data} · ${c.legenda}`
   const t = c.titulo.replace(/[\p{Extended_Pictographic}️]/gu, '').replace(/@[\w.]+/g, '').replace(/\s+/g, ' ').trim()
   const trecho = t.split(/[!?.:]/)[0]?.trim().toLowerCase() ?? ''
   return `${data}${trecho ? ` · ${trecho.slice(0, 42)}` : ''}`
