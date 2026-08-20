@@ -40,25 +40,25 @@ const CSS = `
 .mk .title{font-size:80px;font-weight:800;letter-spacing:-.035em;color:${C.navy}}
 .mk .stat{border-radius:26px;padding:28px 30px;display:flex;flex-direction:column;gap:6px}
 .mk .stat .l{font-size:19px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
-.mk .stat .v{font-size:56px;font-weight:800;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mk .stat .v{font-size:56px;font-weight:800;line-height:1.05;letter-spacing:-.02em}
 .mk .stat .h{font-size:20px;font-weight:400}
 .mk .metric{background:${C.wash};border-radius:28px;padding:26px 34px;display:flex;flex-direction:column;gap:14px}
 .mk .metric .g{display:grid;grid-template-columns:1fr 240px 240px;gap:24px;align-items:baseline}
 .mk .metric .n{font-size:28px;font-weight:600;color:${C.navy}}
-.mk .metric .a{font-size:44px;font-weight:800;color:${C.blue};text-align:right;font-variant-numeric:tabular-nums}
-.mk .metric .b{font-size:44px;font-weight:800;color:${C.navy};text-align:right;font-variant-numeric:tabular-nums}
+.mk .metric .a{font-size:44px;font-weight:800;color:${C.blue};text-align:right}
+.mk .metric .b{font-size:44px;font-weight:800;color:${C.navy};text-align:right}
 .mk .track{height:14px;border-radius:999px;background:${C.line};overflow:hidden}
 .mk .track div{height:100%;border-radius:999px;background:${C.blue}}
 .mk .tile{background:#fff;border-radius:24px;padding:30px 28px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-height:132px}
 .mk .tile .l{font-size:20px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:${C.muted};white-space:nowrap}
-.mk .tile .v{font-size:58px;font-weight:800;line-height:1;color:${C.navy};font-variant-numeric:tabular-nums}
+.mk .tile .v{font-size:58px;font-weight:800;line-height:1;color:${C.navy}}
 .mk .case{display:grid;grid-template-columns:250px 1fr;gap:30px;background:${C.wash};border-radius:32px;padding:26px}
 .mk .case .img{width:250px;border-radius:22px;overflow:hidden;background:${C.tint};display:flex;align-items:center;justify-content:center;color:${C.muted};font-size:20px;text-align:center}
 .mk .case .img img{width:100%;height:100%;object-fit:cover;display:block}
 .mk .case .bd{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:8px 6px 8px 0;min-width:0}
 .mk .case .k{font-size:22px;font-weight:500;color:${C.muted};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mk .case .nm{font-size:52px;font-weight:800;line-height:1;letter-spacing:-.03em;color:${C.navy};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mk .case .big{font-size:88px;font-weight:800;line-height:1.05;letter-spacing:-.035em;color:${C.blue};font-variant-numeric:tabular-nums}
+.mk .case .big{font-size:88px;font-weight:800;line-height:1.05;letter-spacing:-.035em;color:${C.blue}}
 .mk .case .tags{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
 .mk .tag{background:${C.tint};color:${C.blue};font-size:22px;font-weight:600;padding:12px 22px;border-radius:999px;white-space:nowrap}
 .mk .item{background:#fff;border-radius:28px;padding:30px 32px;display:flex;align-items:center;gap:24px}
@@ -119,6 +119,8 @@ function arred(n: number | null | undefined): string {
 const pct = (a: number | null, b: number | null) => (a && b ? Math.max(4, Math.min(100, Math.round((a / b) * 100))) : 0)
 
 function nomeCase(c: CaseMediaKit): string {
+  // Snapshots antigos (antes do campo nome) caem no @ humanizado.
+  if (c.nome) return c.nome
   const h = c.handle ?? ''
   if (h.startsWith('@')) return h.slice(1).replace(/[._]/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
   return h || 'Vamo Nessa'
@@ -180,12 +182,13 @@ export default async function MediaKitGerado({ params }: { params: Promise<{ id:
   const wa = (m.whatsapp ?? '').replace(/\D/g, '')
   const waHref = wa ? `https://wa.me/55${wa}` : undefined
 
-  const metricas: Array<[string, number | null, number | null, boolean]> = [
+  // [nome, 30d, 90d, sinal +, exato (sem arredondar)]
+  const metricas: Array<[string, number | null, number | null, boolean, boolean?]> = [
     ['visualizações', n.ig30.views, n.ig90.views, false],
     ['contas alcançadas', n.ig30.reach, n.ig90.reach, false],
     ['compartilhamentos', n.ig30.shares, n.ig90.shares, false],
     ['salvamentos', n.ig30.saved, n.ig90.saved, false],
-    ['novos seguidores', n.ig30.novosSeguidores, n.ig90.novosSeguidores, true],
+    ['novos seguidores', n.ig30.novosSeguidores, n.ig90.novosSeguidores, true, true],
   ]
 
   return (
@@ -304,12 +307,12 @@ export default async function MediaKitGerado({ params }: { params: Promise<{ id:
               <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: C.navy, textAlign: 'right' }}>últimos 90 dias</div>
             </div>
           </div>
-          {metricas.map(([nome, a, b, sinal]) => (
+          {metricas.map(([nome, a, b, sinal, exato]) => (
             <div className="metric" key={nome}>
               <div className="g">
                 <div className="n">{nome}</div>
-                <div className="a">{sinal ? '+' : ''}{arred(a)}</div>
-                <div className="b">{sinal ? '+' : ''}{arred(b)}</div>
+                <div className="a">{sinal ? '+' : ''}{exato ? fmtInt(a) : arred(a)}</div>
+                <div className="b">{sinal ? '+' : ''}{exato ? fmtInt(b) : arred(b)}</div>
               </div>
               <div className="track"><div style={{ width: `${pct(a, b)}%` }} /></div>
             </div>
@@ -444,7 +447,7 @@ export default async function MediaKitGerado({ params }: { params: Promise<{ id:
             <div className="pill" style={{ background: C.tint, color: C.blue, fontSize: 22, fontWeight: 700, letterSpacing: '.08em' }}>VISITA + GRAVAÇÃO</div>
             {g.cliente ? <div className="pill" style={{ background: C.wash, color: C.text, fontSize: 22, fontWeight: 600 }}>proposta para {g.cliente}</div> : null}
           </div>
-          <div style={{ fontSize: 96, fontWeight: 800, lineHeight: 1, letterSpacing: '-.03em', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: 96, fontWeight: 800, lineHeight: 1, letterSpacing: '-.03em', whiteSpace: 'nowrap' }}>
             {g.valor !== null ? `R$ ${g.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : <>R$ <mark style={{ background: C.mark, color: C.navy, padding: '0 14px', borderRadius: 12 }}>a combinar</mark></>}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

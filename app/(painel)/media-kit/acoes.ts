@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { exigirSessao } from '@/lib/auth/guarda'
-import { coletarNumeros, registrarGeracao, salvarManual } from '@/lib/analytics/media-kit'
+import { coletarNumeros, registrarGeracao, salvarApelido, salvarManual } from '@/lib/analytics/media-kit'
 
 function intOuNull(v: FormDataEntryValue | null): number | null {
   const s = String(v ?? '').replace(/\./g, '').trim()
@@ -34,6 +34,15 @@ export async function salvarManualAction(formData: FormData) {
     },
     sessao.usuario,
   )
+  revalidatePath('/media-kit')
+}
+
+/** Nomes de exibição dos cases (campos apelido:<chave>). */
+export async function salvarApelidosAction(formData: FormData) {
+  await exigirSessao()
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith('apelido:')) await salvarApelido(k.slice('apelido:'.length), String(v ?? ''))
+  }
   revalidatePath('/media-kit')
 }
 

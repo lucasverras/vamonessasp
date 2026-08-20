@@ -40,6 +40,10 @@ export interface TotaisPeriodo {
 export interface CaseMediaKit {
   titulo: string
   handle: string | null
+  /** Nome de exibição: apelido salvo > @ humanizado > nome no título. */
+  nome: string
+  /** Chave do apelido (para editar na aba). */
+  chave: string
   data: string
   thumbnail: string | null
   permalink: string | null
@@ -124,20 +128,46 @@ async function totaisPeriodo(dias: number): Promise<TotaisPeriodo> {
 
 function nomeDoTitulo(t: string): string | null {
   const limpo = t.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '').replace(/\s+/g, ' ').trim()
+  // "No Rei do Macarrão, ..." → nome próprio depois de no/na/do/da.
+  const proprio = limpo.match(/\b(?:[Nn][oa]|[Dd][oa])\s+((?:[A-ZÀ-Ú][\wÀ-ÿ'&.-]*)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][\wÀ-ÿ'&.-]*)*)/)
+  if (proprio?.[1] && proprio[1].length >= 3) return proprio[1].replace(/[.,]$/, '')
   const trecho = limpo.split(/[!?.:\n]/)[0]?.trim() ?? ''
   const palavras = trecho.split(' ').filter(Boolean).slice(0, 6).join(' ')
   return palavras.length >= 4 ? palavras : null
 }
 
+function humanizarHandle(h: string): string {
+  return h.replace(/^@/, '').replace(/[._]/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
+}
+
+export async function getApelidos(): Promise<Map<string, string>> {
+  const { data } = await db().from('media_kit_apelidos').select('chave,nome')
+  return new Map((data ?? []).map((a) => [String(a.chave).toLowerCase(), String(a.nome)]))
+}
+
+export async function salvarApelido(chave: string, nome: string) {
+  const k = chave.trim().toLowerCase()
+  if (!k) return
+  if (!nome.trim()) {
+    await db().from('media_kit_apelidos').delete().eq('chave', k)
+    return
+  }
+  const { error } = await db()
+    .from('media_kit_apelidos')
+    .upsert({ chave: k, nome: nome.trim(), updated_at: new Date().toISOString() }, { onConflict: 'chave' })
+  if (error) throw new Error(error.message)
+}
+
 /** Coleta TUDO agora — é o que vira snapshot na geração. */
 export async function coletarNumeros(): Promise<NumerosMediaKit> {
-  const [conta, ig30, ig90, casesR, { count: fbPosts90 }, manual] = await Promise.all([
+  const [conta, ig30, ig90, casesR, { count: fbPosts90 }, manual, apelidos] = await Promise.all([
     db().from('instagram_accounts').select('username,followers_count,last_sync_at').limit(1).maybeSingle(),
     totaisPeriodo(30),
     totaisPeriodo(90),
     db().rpc('conteudos_consolidados', { desde_param: iso(90) }),
     db().from('platform_posts').select('id', { count: 'exact', head: true }).eq('platform', 'facebook').gte('published_at', iso(90)),
     getManual(),
+    getApelidos(),
   ])
   type Linha = {
     title: string | null; thumbnail_url: string | null; permalink: string | null; published_at: string
@@ -149,10 +179,16 @@ export async function coletarNumeros(): Promise<NumerosMediaKit> {
     .slice(0, 6)
     .map((c) => {
       const t = (c.title ?? '').replace(/\s+/g, ' ').trim()
+      const handle = t.match(/@[\w.]+/)?.[0] ?? null
+      // Sem @ na legenda: nome próprio do título ("No Rei do Macarrão").
+      const derivado = nomeDoTitulo(t)
+      const chave = (handle ?? derivado ?? t.slice(0, 40)).toLowerCase()
+      const nome = apelidos.get(chave) ?? (handle ? humanizarHandle(handle) : (derivado ?? 'Vamo Nessa'))
       return {
         titulo: t.length > 90 ? `${t.slice(0, 88).trimEnd()}…` : t,
-        // Sem @ na legenda: usa o começo do texto (sem emoji) como nome.
-        handle: t.match(/@[\w.]+/)?.[0] ?? nomeDoTitulo(t),
+        handle,
+        nome,
+        chave,
         data: c.published_at,
         thumbnail: c.thumbnail_url,
         permalink: c.permalink,

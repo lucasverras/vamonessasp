@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ExternalLink, FileText } from 'lucide-react'
 import { coletarNumeros, fmtBRL, fmtCompacto, fmtData, fmtInt, listarGerados, rotuloMes } from '@/lib/analytics/media-kit'
-import { gerarAction, salvarManualAction } from './acoes'
+import { gerarAction, salvarApelidosAction, salvarManualAction } from './acoes'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Media Kit' }
@@ -45,8 +45,29 @@ export default async function MediaKitPage() {
         </dl>
         <p className="mt-4 text-[0.8125rem] text-ink-faint">
           Cases (top {n.cases.length} por views nos últimos 90 dias):{' '}
-          {n.cases.map((c) => c.handle ?? c.titulo.slice(0, 24)).join(' · ') || '—'}
+          {n.cases.map((c) => c.nome).join(' · ') || '—'}
         </p>
+      </section>
+
+      {/* Nome de exibição dos cases */}
+      <section className="mt-6 rounded-card border border-line bg-canvas p-5">
+        <h2 className="font-display text-[1.0625rem] font-semibold tracking-[-0.01em]">Nomes dos cases</h2>
+        <p className="mt-1 text-[0.8125rem] text-ink-faint">
+          Como cada lugar aparece no kit. Vale para todos os meses. Vazio = volta ao automático.
+        </p>
+        <form action={salvarApelidosAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+          {n.cases.map((c) => (
+            <div key={c.chave}>
+              <label className={label} htmlFor={`apelido-${c.chave}`}>{c.handle ?? c.titulo.slice(0, 40)}</label>
+              <input id={`apelido-${c.chave}`} name={`apelido:${c.chave}`} className={input} defaultValue={c.nome} />
+            </div>
+          ))}
+          <div className="flex items-end">
+            <button type="submit" className="rounded-lg border border-line px-3.5 py-2 text-[0.8125rem] font-medium text-ink-soft transition-colors hover:border-ink-faint hover:text-ink">
+              Salvar nomes
+            </button>
+          </div>
+        </form>
       </section>
 
       {/* Gerar */}
