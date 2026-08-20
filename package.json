@@ -11,10 +11,12 @@
     "script": "NODE_OPTIONS=--conditions=react-server tsx"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^1.24.0",
     "next": "16.2.10",
     "openai": "^7.5.0",
+    "puppeteer-core": "^25.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.10.1",

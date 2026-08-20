@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Fustat } from 'next/font/google'
-import { BotaoImprimir } from '@/components/botao-imprimir'
+import { BotoesPdf } from '@/components/botoes-pdf'
 import { fmtData, fmtInt, getGerado, type CaseMediaKit, type NumerosMediaKit } from '@/lib/analytics/media-kit'
 
 export const dynamic = 'force-dynamic'
@@ -160,7 +160,8 @@ function Case({ c }: { c: CaseMediaKit }) {
   )
 }
 
-export default async function MediaKitGerado({ params }: { params: Promise<{ id: string }> }) {
+export default async function MediaKitGerado({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
+  const modoPdf = (await searchParams).pdf === '1'
   const g = await getGerado((await params).id)
   if (!g) notFound()
   const n: NumerosMediaKit = g.numeros
@@ -169,8 +170,10 @@ export default async function MediaKitGerado({ params }: { params: Promise<{ id:
   const mesMin = rotulo.toLowerCase().replace(' ', '/')
   const ano = new Date(n.geradoEm).getFullYear()
 
-  const capa = m.foto_capa_url ?? (existsSync(join(process.cwd(), 'public/media-kit/capa.jpg')) ? '/media-kit/capa.jpg' : null)
-  const dupla = m.foto_dupla_url ?? (existsSync(join(process.cwd(), 'public/media-kit/dupla.jpg')) ? '/media-kit/dupla.jpg' : capa)
+  // No PDF do servidor, versões reduzidas das fotos (arquivo leve para WhatsApp).
+  const sufixo = modoPdf ? '-pdf' : ''
+  const capa = m.foto_capa_url ?? (existsSync(join(process.cwd(), `public/media-kit/capa${sufixo}.jpg`)) ? `/media-kit/capa${sufixo}.jpg` : null)
+  const dupla = m.foto_dupla_url ?? (existsSync(join(process.cwd(), `public/media-kit/dupla${sufixo}.jpg`)) ? `/media-kit/dupla${sufixo}.jpg` : capa)
 
   const seg3 = (n.seguidores ?? 0) + (m.tiktok_seguidores ?? 0) + (m.fb_seguidores ?? 0)
   const multiplo90 = n.seguidores && n.ig90.reach ? Math.round(n.ig90.reach / n.seguidores) : null
@@ -196,12 +199,14 @@ export default async function MediaKitGerado({ params }: { params: Promise<{ id:
   return (
     <div className={`mk ${fustat.className}`}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <div className="bar">
-        <span>
-          Media Kit <b>{rotulo}</b>{g.cliente ? ` · ${g.cliente}` : ''} · gerado {fmtData(g.created_at)} · <Link href="/media-kit">voltar</Link>
-        </span>
-        <BotaoImprimir />
-      </div>
+      {modoPdf ? null : (
+        <div className="bar">
+          <span>
+            Media Kit <b>{rotulo}</b>{g.cliente ? ` · ${g.cliente}` : ''} · gerado {fmtData(g.created_at)} · <Link href="/media-kit">voltar</Link>
+          </span>
+          <BotoesPdf id={g.id} nome={`Media Kit ${rotulo}${g.cliente ? ` - ${g.cliente}` : ''}`} />
+        </div>
+      )}
 
       {/* 01 Capa */}
       <section className="pg" style={{ background: C.navy }}>
