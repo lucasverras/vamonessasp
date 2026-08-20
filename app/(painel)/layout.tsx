@@ -5,6 +5,7 @@ import {
   CalendarRange,
   CheckCheck,
   Clock4,
+  FileText,
   LayoutGrid,
   MessageSquare,
   Send,
@@ -29,6 +30,7 @@ const NAV = [
   { href: '/campanhas', label: 'Campanhas', icon: BarChart3 },
   { href: '/horarios', label: 'Horários', icon: Clock4 },
   { href: '/frequencia', label: 'Frequência', icon: CalendarRange },
+  { href: '/media-kit', label: 'Media Kit', icon: FileText },
 ]
 
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {

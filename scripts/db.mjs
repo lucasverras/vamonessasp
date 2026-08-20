@@ -2,8 +2,13 @@
 // Uso: node scripts/db.mjs "select 1"
 import pg from 'pg'
 const ref = process.env.NEXT_PUBLIC_SUPABASE_URL.replace('https://','').replace('.supabase.co','')
+// O host direto (db.<ref>) é só IPv6; em redes sem IPv6 usamos o pooler
+// da região (IPv4). DB_VIA_POOLER=1 força o pooler.
+const direto = { host: `db.${ref}.supabase.co`, user: 'postgres' }
+const pooler = { host: 'aws-0-sa-east-1.pooler.supabase.com', user: `postgres.${ref}` }
+const alvo = process.env.DB_VIA_POOLER ? pooler : direto
 export const client = new pg.Client({
-  host: `db.${ref}.supabase.co`, port: 5432, user: 'postgres',
+  ...alvo, port: 5432,
   password: process.env.SUPABASE_DB_PASSWORD, database: 'postgres',
   ssl: { rejectUnauthorized: false },
 })
