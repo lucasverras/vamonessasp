@@ -78,7 +78,18 @@ export async function listarConteudos(periodo: Periodo): Promise<ConteudoConsoli
   })
   if (error) throw new Error(`Falha ao consolidar conteúdos: ${error.message}`)
 
-  return ((data ?? []) as Omit<ConteudoConsolidado, 'total_views' | 'total_interacoes'>[])
+  // Defesa: UMA linha por conteúdo. O SQL já agrega (0039), mas se voltar a
+  // repetir content_id, somamos FB/TT aqui — chave duplicada no React embaralha
+  // a tabela ao reordenar (foi exatamente o sintoma de 20/08).
+  const porConteudo = new Map<string, Omit<ConteudoConsolidado, 'total_views' | 'total_interacoes'>>()
+  for (const c of (data ?? []) as Omit<ConteudoConsolidado, 'total_views' | 'total_interacoes'>[]) {
+    const j = porConteudo.get(c.content_id)
+    if (!j) { porConteudo.set(c.content_id, c); continue }
+    for (const k of ['fb_views', 'fb_likes', 'fb_comments', 'fb_shares', 'tt_views', 'tt_likes', 'tt_comments', 'tt_shares'] as const) {
+      j[k] = somaOuNull([j[k], c[k]])
+    }
+  }
+  return [...porConteudo.values()]
     .filter((c) => (ate ? new Date(c.published_at) < ate : true))
     .map((c) => ({
       ...c,
