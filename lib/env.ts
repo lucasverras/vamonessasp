@@ -18,11 +18,12 @@ export const META_SCOPES = [
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
-  // Private replies do Facebook (Messenger). Standard access só cobre admins
-  // do app; mensagens para pessoas reais exigem Advanced Access via App
-  // Review — a implementação está pronta e a flag fb_private_reply_enabled
-  // é o portão.
-  'pages_messaging',
+  // pages_messaging NÃO entra aqui ainda: o OAuth da Meta recusa o dialog
+  // inteiro ('Invalid Scopes') enquanto a permissão não for ADICIONADA ao
+  // app no painel (Casos de uso → permissões → pages_messaging, que exige o
+  // caso de uso de Messenger). Com ela na lista, TODA reautorização quebrava
+  // — visto em produção 20/08. Quando o Lucas adicionar no painel, devolver
+  // o escopo aqui; o guard em processarPrivateRepliesFb já espera por ele.
 ] as const
 
 function required(name: string): string {
