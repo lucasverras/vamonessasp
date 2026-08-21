@@ -132,9 +132,15 @@ async function main() {
     const c = a.instagram_comments as unknown as { instagram_comment_id: string } | null
     return c?.instagram_comment_id?.startsWith('AUDIT4-')
   })
-  const publicas = doTeste.filter((a) => a.action_type === 'PUBLIC_REPLY' && a.status === 'PENDING_APPROVAL')
+  // Regra de 20/08: elogio/emoji/marcação e pergunta com fato saem QUEUED
+  // (automáticas); HOLD continua PENDING_APPROVAL. Neutraliza na hora as
+  // QUEUED sintéticas para o worker não tentar publicar em mídia de teste.
+  const publicasAuto = doTeste.filter((a) => a.action_type === 'PUBLIC_REPLY' && a.status === 'QUEUED')
+  const publicasHold = doTeste.filter((a) => a.action_type === 'PUBLIC_REPLY' && a.status === 'PENDING_APPROVAL')
+  await db().from('comment_actions').update({ status: 'SHADOW', skip_reason: 'teste' }).eq('status', 'QUEUED').like('instagram_user_id', 'AUDIT4-%')
   const dms = doTeste.filter((a) => a.action_type === 'PRIVATE_REPLY')
-  caso('respostas públicas aguardam aprovação (>0)', publicas.length > 0, true)
+  caso('públicas automáticas (elogio/emoji/marcação) → QUEUED (>0)', publicasAuto.length > 0, true)
+  caso('pergunta sem fato (estacionamento) → aprovação (>0)', publicasHold.length > 0, true)
   caso('DMs para NOT_FOLLOWING aguardam aprovação (>0)', dms.some((d) => d.status === 'PENDING_APPROVAL'), true)
   caso('nenhuma ação do teste foi ENVIADA', doTeste.some((a) => a.status === 'SENT'), false)
 

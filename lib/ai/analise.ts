@@ -533,6 +533,29 @@ export function respostaAncoradaNoComentario(args: {
  * Pré-filtro heurístico: o que dá para decidir com regex não paga IA.
  * Devolve a intenção detectada ou null (segue para o modelo).
  */
+/** Intenções factuais: só automáticas quando a legenda/fatos já respondem. */
+export const INTENCOES_FACTUAIS_AUTO = ['localizacao', 'preco', 'horario', 'duvida'] as const
+
+/**
+ * Regra de resposta pública automática (Lucas, 20/08/2026):
+ *   EMOJI (chega como elogio pelo fast-path), MARCAÇÃO, ELOGIO e PERGUNTA
+ *   respondida com o que já temos (fatos disponíveis, nada faltando, código OK).
+ * Nunca: negativo, risco alto, revisão forçada, esquiva. O resto fica em aprovação.
+ */
+export function publicaPodeSerAutomatica(
+  a: Pick<Analise, 'intencao' | 'sentimento' | 'risco' | 'fatos_disponiveis' | 'fatos_faltando' | 'decisao_motivo_codigo'>,
+  forcaRevisao: boolean,
+): boolean {
+  if (forcaRevisao) return false
+  if (a.sentimento === 'negativo') return false
+  if (a.risco === 'alto' || a.risco === 'medio') return false
+  if (a.intencao === 'elogio' || a.intencao === 'marcacao_de_amigo') return true
+  if ((INTENCOES_FACTUAIS_AUTO as readonly string[]).includes(a.intencao)) {
+    return a.fatos_faltando.length === 0 && a.fatos_disponiveis.length > 0 && a.decisao_motivo_codigo === 'OK'
+  }
+  return false
+}
+
 export function preFiltro(texto: string): { intent: string; motivo: string } | null {
   const t = texto.trim()
   // Só link, ou golpe clássico de "ganhe X": spam sem ambiguidade.
@@ -573,10 +596,23 @@ async function gravarAnalise(args: {
     esquiva ||
     Boolean(args.forcarRevisaoPorGenerica)
 
-  const decisao = forcaRevisao ? 'HOLD_FOR_REVIEW' : DECISAO_DB[a.decisao]
-  const motivo = forcaRevisao
-    ? `${a.decisao_motivo} — elevado para revisão humana por intenção/risco (regra do sistema, não do modelo)`
-    : a.decisao_motivo
+  // AUTORIZAÇÃO DO LUCAS (20/08/2026, noite): "SE FALAR MAL, NÃO VAMOS
+  // RESPONDER, PODE DESCARTAR". Comentário negativo não vira resposta, não
+  // vira DM e não entra na fila humana — fica registrado como SKIP.
+  const negativo = a.sentimento === 'negativo'
+
+  const decisao = negativo ? 'SKIP' : forcaRevisao ? 'HOLD_FOR_REVIEW' : DECISAO_DB[a.decisao]
+  const motivo = negativo
+    ? `${a.decisao_motivo} — comentário negativo: descartado sem resposta (regra de 20/08)`
+    : forcaRevisao
+      ? `${a.decisao_motivo} — elevado para revisão humana por intenção/risco (regra do sistema, não do modelo)`
+      : a.decisao_motivo
+
+  // AUTORIZAÇÃO DO LUCAS (20/08/2026, noite): resposta pública AUTOMÁTICA para
+  // EMOJI (fast-path local → elogio), MARCAÇÃO, ELOGIO e PERGUNTA cuja resposta
+  // já está na legenda (fatos disponíveis, nada faltando). Todo o resto segue
+  // em aprovação. decidirDestino ainda aplica confiança mínima e categorias.
+  const publicaAutomatica = publicaPodeSerAutomatica(a, forcaRevisao)
 
   const { data: analiseSalva, error } = await db()
     .from('comment_analyses')
@@ -593,7 +629,7 @@ async function gravarAnalise(args: {
       language: a.idioma,
       risk_level: RISCO_DB[a.risco],
       risk_reasons: a.risco_motivos,
-      requires_human: forcaRevisao,
+      requires_human: negativo ? false : forcaRevisao,
       suggested_public_reply: a.resposta_publica,
       suggested_private_reply: a.mensagem_privada,
       cta_strategy: a.cta_estrategia,
@@ -629,7 +665,7 @@ async function gravarAnalise(args: {
     : ({ status: 'SHADOW', agendadoPara: null, motivo: 'sem configuracao' } as const)
 
   const acoes: Array<{ tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'; texto: string }> = []
-  if (a.resposta_publica) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
+  if (a.resposta_publica && !negativo) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
 
   // A DM agora é TEMPLATE do sistema (objetivo: follow) — o modelo só decide
   // SE ela cabe (enviar_ambas/apenas_privada, fora de revisão). O texto vem
@@ -639,7 +675,7 @@ async function gravarAnalise(args: {
   // nossa em 30 dias. FOLLOWS/UNKNOWN/recente viram registro SKIPPED com o
   // motivo — visível na tela, nunca silencioso. HOLD segura a DM junto.
   const dmCabe =
-    !forcaRevisao && (a.decisao === 'enviar_ambas' || a.decisao === 'apenas_privada')
+    !negativo && !forcaRevisao && (a.decisao === 'enviar_ambas' || a.decisao === 'apenas_privada')
   const textoDm = (a.mensagem_privada ?? cfg?.dm_template ?? '').trim()
   let dmBloqueada: { motivo: string } | null = null
   if (dmCabe && textoDm) {
@@ -667,7 +703,7 @@ async function gravarAnalise(args: {
           // jeito" — nunca publica sozinha, mesmo em LIVE. DM qualificada
           // (não-seguidor comprovado + 60 dias) segue automática.
           status:
-            x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED'
+            x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED' && !publicaAutomatica
               ? ('PENDING_APPROVAL' as const)
               : destino.status,
           generated_text: x.texto,
@@ -700,7 +736,7 @@ async function gravarAnalise(args: {
             // QUEUED — este branch de colisão (23505) tinha ficado para trás
             // e deixava uma pública escapar do REVIEW (pego pela bateria).
             status:
-              x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED'
+              x.tipo === 'PUBLIC_REPLY' && destino.status === 'QUEUED' && !publicaAutomatica
                 ? ('PENDING_APPROVAL' as const)
                 : destino.status,
             generated_text: x.texto,
