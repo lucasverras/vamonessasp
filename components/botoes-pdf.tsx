@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, Loader2, RefreshCw, Share2 } from 'lucide-react'
 
 /**
@@ -17,24 +17,28 @@ export function BotoesPdf({ id, nome, grande = false }: { id: string; nome: stri
   const [file, setFile] = useState<File | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [podeCompartilhar, setPodeCompartilhar] = useState(false)
+  const [tentativa, setTentativa] = useState(0)
 
-  const preparar = useCallback(async () => {
-    try {
-      const r = await fetch(url, { cache: 'no-store' })
-      if (!r.ok) throw new Error(`servidor respondeu ${r.status}`)
-      const f = new File([await r.blob()], arquivoNome, { type: 'application/pdf' })
-      setFile(f)
-      setPodeCompartilhar(
-        typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [f] }),
-      )
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'falha ao gerar')
-    }
-  }, [url, arquivoNome])
-
+  // Busca o PDF em segundo plano; o estado só muda nos callbacks da resposta.
   useEffect(() => {
-    void preparar()
-  }, [preparar])
+    let vivo = true
+    fetch(url, { cache: 'no-store' })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`servidor respondeu ${r.status}`)
+        const f = new File([await r.blob()], arquivoNome, { type: 'application/pdf' })
+        if (!vivo) return
+        setFile(f)
+        setPodeCompartilhar(
+          typeof navigator.canShare === 'function' && navigator.canShare({ files: [f] }),
+        )
+      })
+      .catch((e: unknown) => {
+        if (vivo) setErro(e instanceof Error ? e.message : 'falha ao gerar')
+      })
+    return () => {
+      vivo = false
+    }
+  }, [url, arquivoNome, tentativa])
 
   function baixar() {
     if (!file) return
@@ -64,7 +68,7 @@ export function BotoesPdf({ id, nome, grande = false }: { id: string; nome: stri
     return (
       <div className={grande ? 'flex flex-col gap-3' : 'flex items-center gap-2'}>
         <span className="text-sm text-red-400">Não consegui gerar o PDF ({erro}).</span>
-        <button type="button" onClick={() => { setErro(null); setFile(null); void preparar() }} className={`${base} bg-white text-[#01082D]`}>
+        <button type="button" onClick={() => { setErro(null); setFile(null); setTentativa((t) => t + 1) }} className={`${base} bg-white text-[#01082D]`}>
           <RefreshCw className="size-4" /> Tentar de novo
         </button>
       </div>
