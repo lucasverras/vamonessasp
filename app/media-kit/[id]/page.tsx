@@ -2,11 +2,17 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { Viewport } from 'next'
 import { Fustat } from 'next/font/google'
 import { BotoesPdf } from '@/components/botoes-pdf'
 import { fmtData, fmtInt, getGerado, type CaseMediaKit, type NumerosMediaKit } from '@/lib/analytics/media-kit'
 
 export const dynamic = 'force-dynamic'
+
+/* Celular: a página declara largura de layout fixa (1130 = página 1080 +
+ * margens) e o navegador só ESCALA para caber na tela — o kit aparece igual
+ * ao desktop, sem refluir texto. Só os botões de exportar interessam ali. */
+export const viewport: Viewport = { width: 1130, initialScale: 0.3, minimumScale: 0.1, maximumScale: 3 }
 
 /* Design aprovado no Claude Design (20/08/2026, "Kit Antigo e Formulário"):
  * Fustat, navy #01082D, azul #266CA9, azul-claro #ADE1FB, fundos #EFF7FD /
@@ -30,6 +36,7 @@ const CSS = `
 .mk .bar a{color:#9ca3af;text-decoration:underline}
 .mk .pg{width:1080px;height:1920px;position:relative;overflow:hidden;box-sizing:border-box;zoom:.42;box-shadow:0 12px 48px rgba(0,0,0,.45);flex:none;display:flex;flex-direction:column;background:#fff}
 @media (min-width:1100px){.mk .pg{zoom:.58}}
+@media (hover:none) and (pointer:coarse){.mk{padding:16px;gap:16px}.mk .pg{zoom:1}.mk .bar{width:100%;font-size:26px;padding:18px 22px;border-radius:20px}.mk .bar a,.mk .bar button{font-size:26px;padding:14px 22px}.mk .bar svg{width:30px;height:30px}}
 .mk .pad{padding:84px 76px}
 .mk .head{display:flex;justify-content:space-between;align-items:center}
 .mk .brand{display:flex;align-items:center;gap:16px}
