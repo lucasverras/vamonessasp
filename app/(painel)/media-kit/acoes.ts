@@ -20,5 +20,5 @@ export async function gerarAction(formData: FormData) {
   const numeros = await coletarNumeros()
   const id = await registrarGeracao({ cliente, valor, numeros, por: sessao.usuario })
   revalidatePath('/media-kit')
-  redirect(`/media-kit/${id}`)
+  redirect(`/media-kit/${id}/pronto`)
 }

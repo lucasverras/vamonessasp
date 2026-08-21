@@ -46,7 +46,7 @@ export default async function MediaKitPage() {
           </button>
         </form>
         <p className="mt-3 text-[0.8125rem] text-ink-faint">
-          Abre a versão pronta; lá, <strong>Salvar PDF</strong>.
+          Gera o PDF no servidor (8 páginas, igual no celular e no computador) e abre os botões <strong>Baixar</strong> / <strong>Compartilhar</strong>.
         </p>
       </section>
 
@@ -62,8 +62,11 @@ export default async function MediaKitPage() {
                 <span className="text-ink-soft">{g.cliente ?? 'sem cliente'}</span>
                 <span className="tnum text-ink-soft">{fmtBRL(g.valor)}</span>
                 <span className="text-[0.75rem] text-ink-faint">{fmtData(g.created_at)}</span>
-                <Link href={`/media-kit/${g.id}`} target="_blank" className="ml-auto inline-flex items-center gap-1 text-accent hover:underline">
-                  abrir <ExternalLink className="size-3.5" />
+                <Link href={`/media-kit/${g.id}/pronto`} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline">
+                  PDF <ExternalLink className="size-3.5" />
+                </Link>
+                <Link href={`/media-kit/${g.id}`} target="_blank" className="text-ink-faint hover:underline">
+                  ver
                 </Link>
               </li>
             ))}
