@@ -90,7 +90,7 @@ export function exemplosDeTom(intent: string, seed: string): string[] {
  */
 export function pareceRespostaEsquiva(texto: string | null): boolean {
   if (!texto) return false
-  return /n[ãa]o (temos|tenho|sei|sabemos)|informa[çc][ãa]o (confirmada|precisa)|vale (checar|confirmar|consultar)|consulte? (direto|o local|o estabelecimento)|melhor confirmar|liga(r)? (l[áa]|pra eles)|vamos confirmar|vou confirmar|confirmar (essa|a) informa|te avis(amos|o)|assim que (soubermos|souber)/i.test(
+  return /n[ãa]o (temos|tenho|sei|sabemos)|informa[çc][ãa]o (confirmada|precisa)|vale (checar|confirmar|consultar)|consulte? (direto|o local|o estabelecimento)|melhor confirmar|liga(r)? (l[áa]|pra eles)|vamos confirmar|vou confirmar|confirmar (essa|a) informa|te avis(amos|o)|assim que (soubermos|souber)|confirma(r)? (com eles|direto|l[áa])|(pela|no|por) (dm|direct)|chama (eles|l[áa])|manda (uma )?(mensagem|msg) (pra|para) eles|pergunta (direto )?(pra|para) eles|com eles (no|pelo|pela) (direct|dm|whats)/i.test(
     texto,
   )
 }
