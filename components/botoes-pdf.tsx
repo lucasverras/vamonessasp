@@ -19,8 +19,6 @@ export function BotoesPdf({ id, nome, grande = false }: { id: string; nome: stri
   const [podeCompartilhar, setPodeCompartilhar] = useState(false)
 
   const preparar = useCallback(async () => {
-    setErro(null)
-    setFile(null)
     try {
       const r = await fetch(url, { cache: 'no-store' })
       if (!r.ok) throw new Error(`servidor respondeu ${r.status}`)
@@ -66,7 +64,7 @@ export function BotoesPdf({ id, nome, grande = false }: { id: string; nome: stri
     return (
       <div className={grande ? 'flex flex-col gap-3' : 'flex items-center gap-2'}>
         <span className="text-sm text-red-400">Não consegui gerar o PDF ({erro}).</span>
-        <button type="button" onClick={() => void preparar()} className={`${base} bg-white text-[#01082D]`}>
+        <button type="button" onClick={() => { setErro(null); setFile(null); void preparar() }} className={`${base} bg-white text-[#01082D]`}>
           <RefreshCw className="size-4" /> Tentar de novo
         </button>
       </div>
