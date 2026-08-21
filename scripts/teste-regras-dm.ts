@@ -114,7 +114,7 @@ async function main() {
   const c4 = por.get('AUDIT4-c4')
   caso('"quanto custa?" usa preço da legenda', /89[,.]?90/.test(c4?.suggested_public_reply ?? ''), true)
   const c5 = por.get('AUDIT4-c5')
-  caso('"tem estacionamento?" → HOLD', c5?.decision, 'HOLD_FOR_REVIEW')
+  caso('"tem estacionamento?" → pública pedindo confirmar (regra 20/08)', c5?.decision, 'SEND_PUBLIC_ONLY')
   const c6 = por.get('AUDIT4-c6')
   caso('elogio → curta (≤ 60 chars)', (c6?.suggested_public_reply ?? '').length <= 60 && (c6?.suggested_public_reply ?? '').length > 0, true)
   const c7 = por.get('AUDIT4-c7')
@@ -140,7 +140,7 @@ async function main() {
   await db().from('comment_actions').update({ status: 'SHADOW', skip_reason: 'teste' }).eq('status', 'QUEUED').like('instagram_user_id', 'AUDIT4-%')
   const dms = doTeste.filter((a) => a.action_type === 'PRIVATE_REPLY')
   caso('públicas automáticas (elogio/emoji/marcação) → QUEUED (>0)', publicasAuto.length > 0, true)
-  caso('pergunta sem fato (estacionamento) → aprovação (>0)', publicasHold.length > 0, true)
+  caso('nenhuma pública em aprovação no teste (tudo automático agora)', publicasHold.length, 0)
   caso('DMs para NOT_FOLLOWING aguardam aprovação (>0)', dms.some((d) => d.status === 'PENDING_APPROVAL'), true)
   caso('nenhuma ação do teste foi ENVIADA', doTeste.some((a) => a.status === 'SENT'), false)
 

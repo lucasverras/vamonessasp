@@ -44,6 +44,7 @@ export const MOTIVO_PARA_ENUM: Record<MotivoInelegivel, RejectionReason> = {
   JA_SEGUE: 'ALREADY_FOLLOWING',
   FOLLOW_STATUS_UNKNOWN: 'FOLLOW_STATUS_UNKNOWN',
   DM_RECENTE: 'RECENT_PRIVATE_REPLY',
+  RESPOSTA_EM_THREAD: 'META_NOT_ELIGIBLE',
 }
 
 export async function evaluateDmEligibility(

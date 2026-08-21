@@ -29,6 +29,7 @@ export type MotivoInelegivel =
   | 'JA_SEGUE'
   | 'FOLLOW_STATUS_UNKNOWN'
   | 'DM_RECENTE'
+  | 'RESPOSTA_EM_THREAD'
 
 export function expiraEm(comentadoEm: Date | string): Date {
   const base = typeof comentadoEm === 'string' ? new Date(comentadoEm) : comentadoEm

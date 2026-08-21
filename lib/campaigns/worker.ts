@@ -103,7 +103,7 @@ export async function processarLote(tamanhoMax = 10): Promise<ResultadoLote> {
     //    diferentes, funil diferente.
     const veredito =
       item.action_type === 'PUBLIC_REPLY'
-        ? await revalidarPublica(item.comment_id)
+        ? await revalidarPublica(item.comment_id, token, conta.instagramUserId)
         : // Passa o próprio id: sem isso o worker se vê na fila e ignora tudo.
           // Item SEM campanha só chega QUEUED por aprovação individual humana
           // (ou pelo gate que já exige NOT_FOLLOWING); item DE campanha é
@@ -366,15 +366,32 @@ async function atualizarContadoresDeCampanhas() {
  * A dedupe (uma pública por comentário) é a unique parcial — esta linha,
  * já em SENDING, é por construção a única em voo para o comentário.
  */
-async function revalidarPublica(commentId: string): Promise<Veredito> {
+async function revalidarPublica(commentId: string, token?: string, igUserId?: string): Promise<Veredito> {
   const { data: c } = await db()
     .from('instagram_comments')
-    .select('id,is_from_account,deleted_at')
+    .select('id,is_from_account,deleted_at,instagram_comment_id,parent_comment_id')
     .eq('id', commentId)
     .maybeSingle()
   if (!c) return { pode: false, motivo: 'COMENTARIO_APAGADO', detalhe: 'não está no banco' }
   if (c.deleted_at) return { pode: false, motivo: 'COMENTARIO_APAGADO' }
   if (c.is_from_account) return { pode: false, motivo: 'COMENTARIO_PROPRIO' }
+  // REGRA DO LUCAS (20/08): só o comentário principal; thread não recebe resposta.
+  if (c.parent_comment_id) return { pode: false, motivo: 'RESPOSTA_EM_THREAD', detalhe: 'só o comentário principal recebe resposta' }
+  // REGRA DO LUCAS (20/08): se o @vamonessasp já respondeu, descarta. Banco
+  // primeiro (replies nossas chegam pelo webhook); API para comentário de topo.
+  const { count } = await db()
+    .from('instagram_comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_comment_id', c.instagram_comment_id)
+    .eq('is_from_account', true)
+  if ((count ?? 0) > 0) return { pode: false, motivo: 'JA_RESPONDIDO', detalhe: 'já respondido pelo perfil' }
+  if (token && igUserId && !c.parent_comment_id) {
+    try {
+      const { metaGet } = await import('../instagram/meta-client')
+      const r = (await metaGet<{ data?: Array<{ from?: { id?: string } }> }>(`${c.instagram_comment_id}/replies`, token, { fields: 'id,from', limit: 50 })) as { data?: Array<{ from?: { id?: string } }> }
+      if ((r.data ?? []).some((x) => x.from?.id === igUserId)) return { pode: false, motivo: 'JA_RESPONDIDO', detalhe: 'já respondido pelo perfil (API)' }
+    } catch { /* API indisponível: confia no banco */ }
+  }
   return { pode: true, motivo: null }
 }
 

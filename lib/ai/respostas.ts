@@ -88,6 +88,30 @@ export function exemplosDeTom(intent: string, seed: string): string[] {
  * adversarial de 17/08/2026: o modelo respondeu "vale checar direto com eles"
  * para "tem estacionamento?" e o sistema enfileirou.
  */
+/** Regra do Lucas (20/08): UM emoji só, em tudo. Mantém o primeiro, remove os
+ *  demais (respeita sequências compostas: tons de pele, ZWJ, bandeiras). */
+export function umEmojiSo(texto: string | null): string | null {
+  if (!texto) return texto
+  const seg = new Intl.Segmenter('pt', { granularity: 'grapheme' })
+  let vistos = 0
+  let out = ''
+  for (const { segment } of seg.segment(texto)) {
+    if (/\p{Extended_Pictographic}/u.test(segment)) {
+      vistos += 1
+      if (vistos > 1) continue
+    }
+    out += segment
+  }
+  return out.replace(/[ \t]{2,}/g, ' ').replace(/ +([.!?,])/g, '$1').trim()
+}
+
+const PALAVROES =
+  /\b(porra|caralh[oa]|carai[oa]?|krl|merda|puta|putaria|fod[ae][-\s]?se|foda|fod[ao]|fdp|pqp|vsf|vtnc|cu|buceta|arrombad[oa]|desgra[çc]a|filh[oa] da puta|bosta|viado|otári[oa]|babaca|idiota)\b/i
+/** Regra do Lucas (20/08): nunca palavrão, mesmo que o comentário use. */
+export function contemPalavrao(texto: string | null): boolean {
+  return Boolean(texto && PALAVROES.test(texto))
+}
+
 export function pareceRespostaEsquiva(texto: string | null): boolean {
   if (!texto) return false
   return /n[ãa]o (temos|tenho|sei|sabemos)|informa[çc][ãa]o (confirmada|precisa)|vale (checar|confirmar|consultar)|consulte? (direto|o local|o estabelecimento)|melhor confirmar|liga(r)? (l[áa]|pra eles)|vamos confirmar|vou confirmar|confirmar (essa|a) informa|te avis(amos|o)|assim que (soubermos|souber)|confirma(r)? (com eles|direto|l[áa])|(pela|no|por) (dm|direct)|chama (eles|l[áa])|manda (uma )?(mensagem|msg) (pra|para) eles|pergunta (direto )?(pra|para) eles|com eles (no|pelo|pela) (direct|dm|whats)/i.test(
@@ -128,6 +152,9 @@ export function validarRespostaPublica(
     autorHumano?: boolean
   },
 ): string | null {
+  // Regras de 20/08: palavrão nunca; um emoji só (o pipeline normaliza, isto é a rede).
+  if (contemPalavrao(texto)) return 'PALAVRAO'
+  if ([...new Intl.Segmenter('pt', { granularity: 'grapheme' }).segment(texto)].filter((g) => /\p{Extended_Pictographic}/u.test(g.segment)).length > 1) return 'MAIS_DE_UM_EMOJI'
   const t = texto.trim()
   if (!t) return 'VAZIA'
   if (t.length > 240) return 'LONGA_DEMAIS'

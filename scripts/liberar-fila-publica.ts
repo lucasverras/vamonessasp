@@ -11,7 +11,7 @@ import { db } from '../lib/db'
 import { publicaPodeSerAutomatica } from '../lib/ai/analise'
 import { getConnectedAccount, getPageToken } from '../lib/instagram/account'
 import { metaGet } from '../lib/instagram/meta-client'
-import { validarRespostaPublica } from '../lib/ai/respostas'
+import { umEmojiSo, validarRespostaPublica } from '../lib/ai/respostas'
 
 const APLICAR = process.argv.includes('--aplicar')
 const QUEM = 'regra-auto-20/08'
@@ -34,7 +34,8 @@ async function main() {
   console.log('pendentes públicas:', itens.length)
 
   const RISCO: Record<string, 'nenhum' | 'baixo' | 'medio' | 'alto'> = { NONE: 'nenhum', LOW: 'baixo', MEDIUM: 'medio', HIGH: 'alto' }
-  const r = { liberadas: 0, jaRespondidas: 0, negativas: 0, ficam: 0, invalidas: 0 }
+  const r = { liberadas: 0, jaRespondidas: 0, negativas: 0, thread: 0, ficam: 0, invalidas: 0, normalizadas: 0 }
+  const FACTUAIS = ['localizacao', 'preco', 'horario', 'duvida']
   const agora = Date.now()
   let ordem = 0
 
@@ -51,7 +52,38 @@ async function main() {
       continue
     }
 
-    const auto = publicaPodeSerAutomatica(
+    // thread: só o comentário principal (regra 20/08)
+    if (c.parent_comment_id) {
+      r.thread++
+      if (APLICAR) await db().from('comment_actions').update({ status: 'REJECTED', rejected_by: QUEM, rejected_reason: 'RESPOSTA_EM_THREAD: só o comentário principal recebe resposta' }).eq('id', it.id)
+      continue
+    }
+    // já respondido pelo perfil vale para TODOS os pendentes (regra 20/08)
+    {
+      const { count: nb } = await db().from('instagram_comments').select('id', { count: 'exact', head: true }).eq('parent_comment_id', c.instagram_comment_id).eq('is_from_account', true)
+      let resp = (nb ?? 0) > 0
+      if (!resp) {
+        try {
+          const rr = (await metaGet<{ data?: Array<{ from?: { id?: string } }> }>(`${c.instagram_comment_id}/replies`, token, { fields: 'id,from', limit: 50 })) as { data?: Array<{ from?: { id?: string } }> }
+          resp = (rr.data ?? []).some((x) => x.from?.id === conta.instagramUserId)
+        } catch { /* confia no banco */ }
+      }
+      if (resp) {
+        r.jaRespondidas++
+        if (APLICAR) await db().from('comment_actions').update({ status: 'REJECTED', rejected_by: QUEM, rejected_reason: 'JA_RESPONDIDO_NO_INSTAGRAM: resposta manual encontrada' }).eq('id', it.id)
+        continue
+      }
+    }
+    // um emoji só (regra 20/08) — normaliza o texto antes de qualquer decisão
+    const textoOriginal = (it.final_text ?? it.generated_text ?? '').trim()
+    const textoNorm = umEmojiSo(textoOriginal) ?? textoOriginal
+    if (textoNorm !== textoOriginal) {
+      r.normalizadas++
+      if (APLICAR) await db().from('comment_actions').update({ generated_text: textoNorm, final_text: it.final_text ? textoNorm : null }).eq('id', it.id)
+      it.final_text = it.final_text ? textoNorm : null; it.generated_text = textoNorm
+    }
+    const factualSemFato = FACTUAIS.includes(an.intent) && an.sentiment !== 'negativo' && an.risk_level !== 'HIGH'
+    const auto = factualSemFato || publicaPodeSerAutomatica(
       {
         intencao: an.intent as never,
         sentimento: an.sentiment as never,
@@ -64,25 +96,9 @@ async function main() {
     ) && Number(an.intent_confidence ?? 0) >= 0.85
     if (!auto) { r.ficam++; continue }
 
-    const texto = (it.final_text ?? it.generated_text ?? '').trim()
-    if (!texto || validarRespostaPublica(texto, [])) { r.invalidas++; continue }
-
-    // Já respondemos à mão? 1) banco (replies da conta chegam pelo webhook/sync)
-    const { count: noBanco } = await db().from('instagram_comments').select('id', { count: 'exact', head: true })
-      .eq('parent_comment_id', c.instagram_comment_id).eq('is_from_account', true)
-    let respondido = (noBanco ?? 0) > 0
-    // 2) API, só para comentário de topo (replies de reply não existem na Graph)
-    if (!respondido && !c.parent_comment_id) {
-      try {
-        const resp = (await metaGet<{ data?: Array<{ from?: { id?: string } }> }>(`${c.instagram_comment_id}/replies`, token, { fields: 'id,from', limit: 50 })) as { data?: Array<{ from?: { id?: string } }> }
-        respondido = (resp.data ?? []).some((x) => x.from?.id === conta.instagramUserId)
-      } catch { /* erro de API → confia no banco */ }
-    }
-    if (respondido) {
-      r.jaRespondidas++
-      if (APLICAR) await db().from('comment_actions').update({ status: 'REJECTED', rejected_by: QUEM, rejected_reason: 'JA_RESPONDIDO_NO_INSTAGRAM: resposta manual encontrada' }).eq('id', it.id)
-      continue
-    }
+    const texto = (it.final_text ?? it.generated_text ?? '').trim() || 'Melhor confirmar diretamente com eles no direct! 🙌'
+    if (validarRespostaPublica(texto, [])) { r.invalidas++; continue }
+    if (APLICAR && texto !== (it.final_text ?? it.generated_text ?? '').trim()) await db().from('comment_actions').update({ generated_text: texto }).eq('id', it.id)
 
     r.liberadas++
     if (APLICAR) {

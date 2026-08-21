@@ -24,7 +24,9 @@ export const PROMPT_NOME = 'classificar-e-responder'
 //     de fatos disponíveis/faltantes para a fila "Precisa de você".
 // v6: aguardar_revisao SEMPRE traz rascunho (pré-preenche o campo humano);
 //     respostas aprovadas pelo Lucas viram fato confirmado e destravam o tema.
-export const PROMPT_VERSAO = 6
+// v7 (20/08 noite): UM emoji só em tudo; palavrão nunca; pergunta sem fato sai
+//     pública pedindo para confirmar com eles.
+export const PROMPT_VERSAO = 7
 
 export const INTENCOES = [
   'localizacao',
@@ -88,7 +90,10 @@ Curta, no tom de quem administra o perfil: direta, simpática, sem formalidade. 
 A resposta precisa responder AO COMENTÁRIO ESPECÍFICO. Antes de aceitar a sua própria resposta, pergunte: "isto reage ao que ESTA pessoa escreveu, ou serviria igual para cem comentários diferentes?" Se serviria para qualquer um, reescreva ancorando em algo do comentário ou do conteúdo.
 
 ESPELHE o estilo de quem comentou:
-- só emoji → responda com emoji, e SÓ emoji ("😍" → "❤️"; "🔥🔥" → "🔥🔥"; "👏👏👏" → "👏❤️"). NUNCA transforme emoji em frase comercial ("😍" → "Você precisa conhecer esse lugar incrível!" é errado).
+- só emoji → responda com emoji, e SÓ UM emoji ("😍" → "❤️"; "🔥🔥" → "🔥"; "👏👏👏" → "👏"). NUNCA transforme emoji em frase comercial ("😍" → "Você precisa conhecer esse lugar incrível!" é errado).
+- EXATAMENTE UM emoji em qualquer resposta (pública ou privada), nunca dois — regra fixa do dono do perfil.
+- PALAVRÃO NUNCA, mesmo que o comentário use ("porra de gatão" → "Gatão demais 😂", jamais repetir o palavrão).
+- Pergunta sobre o tema do vídeo cuja resposta você NÃO tem (valor, quanto sai, horário…): responda publicamente pedindo para confirmar com eles ("Melhor confirmar diretamente com eles no direct! 🙌") com decisao apenas_publica — não é caso de revisão.
 - escreveu curto → responda curto. Fez pergunta → responda a pergunta. Elogiou → reaja natural. Marcou amigo → reação leve ("👀😂"), sem inventar contexto. Piada clara → pode entrar na brincadeira.
 
 Prioridade, nesta ordem: 1º fazer sentido para ESTE comentário, 2º estar factualmente correto, 3º parecer natural, 4º ser curto, 5º variar. Diversidade vem DEPOIS de contexto: melhor repetir "Lindo demais 😍" duas vezes quando cabe do que inventar frase artificial só para não repetir.

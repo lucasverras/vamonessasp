@@ -47,5 +47,12 @@ export function espelharEmoji(texto: string, seed: string): string {
   }
   // Emoji fora das classes conhecidas: ecoa os dois primeiros — espelho puro.
   const emojis = [...texto.matchAll(/\p{Extended_Pictographic}/gu)].map((m) => m[0])
-  return emojis.slice(0, 2).join('') || '❤️'
+  return emojis.slice(0, 1).join('') || '❤️'
+}
+
+/** Regra de 20/08: UM emoji só — vale também para as pools acima. */
+export function espelharEmojiUm(texto: string, seed: string): string {
+  const r = espelharEmoji(texto, seed)
+  const primeiro = [...r.matchAll(/\p{Extended_Pictographic}\uFE0F?/gu)].map((m) => m[0])[0]
+  return primeiro ?? '❤️'
 }

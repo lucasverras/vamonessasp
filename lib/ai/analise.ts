@@ -4,8 +4,8 @@ import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { decidirDestino, lerConfigAutomacao } from '../automation/decidir'
 import { gateDmParaIgsid } from '../instagram/follow-status'
-import { contemCtaDeFollow, exemplosDeTom, pareceRespostaEsquiva } from './respostas'
-import { ehSoEmoji, espelharEmoji } from './emoji-local'
+import { contemCtaDeFollow, contemPalavrao, exemplosDeTom, pareceRespostaEsquiva, umEmojiSo } from './respostas'
+import { ehSoEmoji, espelharEmojiUm } from './emoji-local'
 import { db } from '../db'
 import {
   INTENCOES,
@@ -143,6 +143,8 @@ export async function garantirPromptRegistrado(modelo = MODELO_PADRAO): Promise<
 
 interface ComentarioParaAnalise {
   id: string
+  instagram_comment_id: string
+  parent_comment_id: string | null
   text: string | null
   username: string | null
   instagram_user_id: string | null
@@ -176,7 +178,7 @@ export async function analisarPendentes(limite = 20) {
   const { data: comentarios, error } = await db()
     .from('instagram_comments')
     .select(
-      'id,text,username,instagram_user_id,media_id,commented_at,instagram_media:media_id(caption,media_product_type,published_at)',
+      'id,instagram_comment_id,parent_comment_id,text,username,instagram_user_id,media_id,commented_at,instagram_media:media_id(caption,media_product_type,published_at)',
     )
     .eq('analysis_status', 'PENDING')
     .eq('is_from_account', false)
@@ -238,7 +240,7 @@ export async function analisarPendentes(limite = 20) {
           risco: 'nenhum',
           risco_motivos: [],
           exige_humano: false,
-          resposta_publica: espelharEmoji(c.text ?? '', c.id),
+          resposta_publica: espelharEmojiUm(c.text ?? '', c.id),
           mensagem_privada: null,
           cta_estrategia: null,
           decisao: 'enviar_ambas',
@@ -550,9 +552,9 @@ export function publicaPodeSerAutomatica(
   if (a.sentimento === 'negativo') return false
   if (a.risco === 'alto' || a.risco === 'medio') return false
   if (a.intencao === 'elogio' || a.intencao === 'marcacao_de_amigo') return true
-  if ((INTENCOES_FACTUAIS_AUTO as readonly string[]).includes(a.intencao)) {
-    return a.fatos_faltando.length === 0 && a.fatos_disponiveis.length > 0 && a.decisao_motivo_codigo === 'OK'
-  }
+  // Pergunta sobre o tema: com fato responde; sem fato pede para confirmar
+  // com eles (Lucas, 20/08) — nos dois casos sai automática.
+  if ((INTENCOES_FACTUAIS_AUTO as readonly string[]).includes(a.intencao)) return true
   return false
 }
 
@@ -576,7 +578,8 @@ async function gravarAnalise(args: {
   modelo?: string
   uso: { entrada: number; saida: number; latenciaMs: number }
 }) {
-  const { comentario: c, analise: a, promptId, contexto, uso } = args
+  const { comentario: c, promptId, contexto, uso } = args
+  let a: Analise = args.analise
 
   // Trava de segurança independente da IA: mesmo que ela decida enviar, uma
   // intenção da lista never-auto vira revisão humana. A decisão do modelo é
@@ -589,11 +592,37 @@ async function gravarAnalise(args: {
     INTENCOES_FACTUAIS.includes(a.intencao) &&
     (pareceRespostaEsquiva(a.resposta_publica) || pareceRespostaEsquiva(a.mensagem_privada))
 
+  // REGRA DO LUCAS (20/08, noite): pergunta sobre o tema do vídeo que NÃO
+  // sabemos responder (valor, "quanto sai"…) PODE sair automática pedindo para
+  // confirmar com eles. A esquiva deixa de forçar revisão nessas intenções;
+  // se o modelo pediu revisão só por falta de informação, vira resposta
+  // pública com o rascunho (ou o texto padrão).
+  const perguntaSemFato =
+    INTENCOES_FACTUAIS.includes(a.intencao) &&
+    a.sentimento !== 'negativo' &&
+    a.risco !== 'alto' &&
+    (a.decisao === 'aguardar_revisao' || esquiva) &&
+    /^(MISSING_INFORMATION|PRICE_NOT_AVAILABLE|AMBIGUOUS_QUESTION|OK|LOW_CONFIDENCE)/.test(a.decisao_motivo_codigo || 'OK')
+  if (perguntaSemFato) {
+    a = {
+      ...a,
+      decisao: 'apenas_publica',
+      exige_humano: false,
+      resposta_publica: a.resposta_publica?.trim() || 'Melhor confirmar diretamente com eles no direct! 🙌',
+      decisao_motivo: `${a.decisao_motivo} — pergunta sem fato: responde pedindo para confirmar com eles (regra 20/08)`,
+    }
+  }
+
+  // REGRAS DO LUCAS (20/08, noite): UM emoji só em tudo; palavrão nunca
+  // (se a IA repetiu o do comentário, vai para humano em vez de publicar).
+  a = { ...a, resposta_publica: umEmojiSo(a.resposta_publica), mensagem_privada: umEmojiSo(a.mensagem_privada) }
+  const palavrao = contemPalavrao(a.resposta_publica) || contemPalavrao(a.mensagem_privada)
+
   const forcaRevisao =
     NUNCA_AUTOMATICO.includes(a.intencao as Intencao) ||
     a.risco === 'alto' ||
     a.exige_humano ||
-    esquiva ||
+    palavrao ||
     Boolean(args.forcarRevisaoPorGenerica)
 
   // AUTORIZAÇÃO DO LUCAS (20/08/2026, noite): "SE FALAR MAL, NÃO VAMOS
@@ -605,7 +634,7 @@ async function gravarAnalise(args: {
   const motivo = negativo
     ? `${a.decisao_motivo} — comentário negativo: descartado sem resposta (regra de 20/08)`
     : forcaRevisao
-      ? `${a.decisao_motivo} — elevado para revisão humana por intenção/risco (regra do sistema, não do modelo)`
+      ? `${a.decisao_motivo} — elevado para revisão humana por ${palavrao ? 'PALAVRAO na resposta' : 'intenção/risco'} (regra do sistema, não do modelo)`
       : a.decisao_motivo
 
   // AUTORIZAÇÃO DO LUCAS (20/08/2026, noite): resposta pública AUTOMÁTICA para
@@ -664,8 +693,29 @@ async function gravarAnalise(args: {
       })
     : ({ status: 'SHADOW', agendadoPara: null, motivo: 'sem configuracao' } as const)
 
+  // REGRA DO LUCAS (20/08): se o @vamonessasp já respondeu esse comentário
+  // (resposta manual pelo app chega como comentário nosso com parent), descarta.
+  const { count: jaRespondido } = await db()
+    .from('instagram_comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_comment_id', c.instagram_comment_id)
+    .eq('is_from_account', true)
+  const respondidoPeloPerfil = (jaRespondido ?? 0) > 0
+  // REGRA DO LUCAS (20/08): foco no comentário principal — resposta dentro
+  // de thread (comentário que responde outro) não recebe resposta pública.
+  const emThread = Boolean(c.parent_comment_id)
+
   const acoes: Array<{ tipo: 'PUBLIC_REPLY' | 'PRIVATE_REPLY'; texto: string }> = []
-  if (a.resposta_publica && !negativo) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
+  if (a.resposta_publica && !negativo && !respondidoPeloPerfil && !emThread) acoes.push({ tipo: 'PUBLIC_REPLY', texto: a.resposta_publica })
+  if ((respondidoPeloPerfil || emThread) && a.resposta_publica && !negativo) {
+    await db().from('comment_actions').insert({
+      comment_id: c.id, analysis_id: analiseSalva.id, action_type: 'PUBLIC_REPLY', mode: 'SHADOW', status: 'SKIPPED',
+      generated_text: a.resposta_publica, reply_source: 'AI', instagram_user_id: c.instagram_user_id, media_id: c.media_id ?? null,
+      skip_reason: respondidoPeloPerfil
+        ? 'JA_RESPONDIDO_PELO_PERFIL: @vamonessasp já respondeu este comentário'
+        : 'RESPOSTA_EM_THREAD: só o comentário principal recebe resposta',
+    })
+  }
 
   // A DM agora é TEMPLATE do sistema (objetivo: follow) — o modelo só decide
   // SE ela cabe (enviar_ambas/apenas_privada, fora de revisão). O texto vem
