@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies, headers } from 'next/headers'
 import { exigirSessao } from '@/lib/auth/guarda'
-import { getGerado } from '@/lib/analytics/media-kit'
+import { getGerado, nomeArquivoKit } from '@/lib/analytics/media-kit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,7 +48,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const pdf = await page.pdf({
       width: '1080px', height: '1920px', printBackground: true, preferCSSPageSize: true, margin: { top: 0, right: 0, bottom: 0, left: 0 },
     })
-    const nome = `Media Kit ${g.rotulo}${g.cliente ? ` - ${g.cliente}` : ''}.pdf`.replace(/[\\/:*?"<>|]/g, '')
+    const nome = `${nomeArquivoKit(g.rotulo)}.pdf`
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         'Content-Type': 'application/pdf',

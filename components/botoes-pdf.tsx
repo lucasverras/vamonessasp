@@ -55,7 +55,8 @@ export function BotoesPdf({ id, nome, grande = false }: { id: string; nome: stri
   function compartilhar() {
     if (!file) return
     // Sem await antes: precisa acontecer dentro do gesto do usuário.
-    navigator.share({ files: [file], title: nome }).catch(() => {
+    // Só o arquivo — sem title/text, para o WhatsApp não pré-preencher mensagem.
+    navigator.share({ files: [file] }).catch(() => {
       /* cancelado pelo usuário — nada a fazer */
     })
   }

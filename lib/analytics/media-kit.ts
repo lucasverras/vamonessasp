@@ -209,6 +209,13 @@ export async function coletarNumeros(): Promise<NumerosMediaKit> {
   }
 }
 
+/** Nome do arquivo pedido pelo Lucas (20/08): MediaKit_VamoNessaSP_Agosto */
+export function nomeArquivoKit(rotulo: string): string {
+  const mes = rotulo.split(' ')[0] ?? ''
+  const Mes = mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase()
+  return `MediaKit_VamoNessaSP_${Mes}`
+}
+
 export function rotuloMes(iso: string): string {
   return new Date(iso)
     .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' })

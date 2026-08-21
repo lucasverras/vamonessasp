@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation'
 import type { Viewport } from 'next'
 import { Fustat } from 'next/font/google'
 import { BotoesPdf } from '@/components/botoes-pdf'
-import { fmtData, fmtInt, getGerado, type CaseMediaKit, type NumerosMediaKit } from '@/lib/analytics/media-kit'
+import { fmtData, fmtInt, getGerado, nomeArquivoKit, type CaseMediaKit, type NumerosMediaKit } from '@/lib/analytics/media-kit'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,9 +20,12 @@ export const viewport: Viewport = { width: 1130, initialScale: 0.3, minimumScale
  * congelado da geração — o layout é o do design, os dados são os do dia. */
 const fustat = Fustat({ subsets: ['latin'], display: 'block' })
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+export async function generateMetadata({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const g = await getGerado((await params).id)
-  return { title: g ? `Media Kit ${g.rotulo}${g.cliente ? ` · ${g.cliente}` : ''}` : 'Media Kit' }
+  if (!g) return { title: 'Media Kit' }
+  // No modo PDF o <title> vira o título do documento — sem " · Vamo Nessa".
+  if ((await searchParams).pdf === '1') return { title: { absolute: nomeArquivoKit(g.rotulo) } }
+  return { title: `Media Kit ${g.rotulo}${g.cliente ? ` · ${g.cliente}` : ''}` }
 }
 
 const C = {
@@ -211,7 +214,7 @@ export default async function MediaKitGerado({ params, searchParams }: { params:
           <span>
             Media Kit <b>{rotulo}</b>{g.cliente ? ` · ${g.cliente}` : ''} · gerado {fmtData(g.created_at)} · <Link href="/media-kit">voltar</Link>
           </span>
-          <BotoesPdf id={g.id} nome={`Media Kit ${rotulo}${g.cliente ? ` - ${g.cliente}` : ''}`} />
+          <BotoesPdf id={g.id} nome={nomeArquivoKit(rotulo)} />
         </div>
       )}
 

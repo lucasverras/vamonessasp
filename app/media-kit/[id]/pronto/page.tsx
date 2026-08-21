@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { BotoesPdf } from '@/components/botoes-pdf'
-import { fmtBRL, fmtData, getGerado } from '@/lib/analytics/media-kit'
+import { fmtBRL, fmtData, getGerado, nomeArquivoKit } from '@/lib/analytics/media-kit'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function MediaKitPronto({ params }: { params: Promise<{ id: string }> }) {
   const g = await getGerado((await params).id)
   if (!g) notFound()
-  const nome = `Media Kit ${g.rotulo}${g.cliente ? ` - ${g.cliente}` : ''}`
+  const nome = nomeArquivoKit(g.rotulo)
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 py-10">
       <div>
